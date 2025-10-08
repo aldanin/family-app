@@ -1,16 +1,53 @@
 /**
  * Tools for interacting with the Family MCP Server
- * This demonstrates how an agent connects to external MCP servers
+ * This connects to the SAME MCP server that GitHub Copilot uses!
+ * Both your agent and GitHub Copilot connect to: http://localhost:6402/sse
  */
 
-import fetch from 'node-fetch';
-import { FamilyEventsResponse, DPOCResponse, ToolResult } from './types';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { ToolResult } from './types';
 
 export class FamilyMCPClient {
+  private client: Client | null = null;
   private baseUrl: string;
+  private isConnected: boolean = false;
 
-  constructor(baseUrl: string = 'http://localhost:6402') {
+  constructor(baseUrl: string = 'http://localhost:6402/sse') {
     this.baseUrl = baseUrl;
+  }
+
+  /**
+   * Connect to the MCP server
+   */
+  private async connect(): Promise<void> {
+    if (this.isConnected && this.client) {
+      return;
+    }
+
+    try {
+      console.log(`🔌 Connecting to MCP server at ${this.baseUrl}...`);
+      
+      // Create SSE transport (same as GitHub Copilot uses)
+      const transport = new SSEClientTransport(new URL(this.baseUrl));
+      
+      // Create MCP client
+      this.client = new Client({
+        name: 'family-agent',
+        version: '1.0.0'
+      }, {
+        capabilities: {}
+      });
+
+      // Connect to the server
+      await this.client.connect(transport);
+      this.isConnected = true;
+      
+      console.log('✅ Connected to MCP server!');
+    } catch (error) {
+      console.error('❌ Failed to connect to MCP server:', error);
+      throw error;
+    }
   }
 
   /**
@@ -18,27 +55,55 @@ export class FamilyMCPClient {
    */
   async getDPOC(): Promise<ToolResult> {
     try {
-      console.log('🔧 [Tool: getDPOC] Fetching oldest family member birthdate...');
+      console.log('🔧 [Tool: getDPOC] Calling family MCP server...');
       
-      // Note: This is a placeholder - in a real MCP implementation,
-      // you would use the MCP protocol to call the tool
-      // For now, we'll simulate the response based on what we know works
+      // Ensure connected
+      await this.connect();
       
-      const result: DPOCResponse = {
-        dpoc: '-255139200',
-        description: 'EPOCH timestamp of the oldest birthdate in the members table'
-      };
+      if (!this.client) {
+        throw new Error('MCP client not initialized');
+      }
+
+      // Call the tool
+      const result = await this.client.callTool({
+        name: 'getDPOC',
+        arguments: {}
+      });
+
+      // Parse response
+      const resultData = result as any;
+      const content = resultData.content?.[0];
+      let dpocValue: string;
+      
+      if (content?.type === 'text') {
+        // Try to parse JSON response
+        try {
+          const parsed = JSON.parse(content.text);
+          dpocValue = parsed.dpoc || parsed;
+        } catch {
+          dpocValue = content.text;
+        }
+      } else {
+        dpocValue = String(content);
+      }
 
       return {
         toolName: 'getDPOC',
         success: true,
-        data: result,
-        reasoning: 'Retrieved the family timeline reference point (DPOC)'
+        data: {
+          dpoc: dpocValue,
+          description: 'EPOCH timestamp of the oldest birthdate in the members table'
+        },
+        reasoning: 'Retrieved the family timeline reference point (DPOC) from MCP server'
       };
     } catch (error) {
+      console.error('❌ Error calling getDPOC:', error);
       return {
         toolName: 'getDPOC',
         success: false,
+        data: {
+          answer: `❌ Error connecting to family MCP server: ${error instanceof Error ? error.message : 'Unknown error'}\n\nMake sure the family-mcp-server is running on ${this.baseUrl}`
+        },
         error: error instanceof Error ? error.message : 'Unknown error',
         reasoning: 'Failed to connect to family MCP server'
       };
@@ -50,63 +115,194 @@ export class FamilyMCPClient {
    */
   async getEvents(name: string, refDate?: number): Promise<ToolResult> {
     try {
-      console.log(`🔧 [Tool: getEvents] Fetching events for ${name}...`);
+      console.log(`🔧 [Tool: getEvents] Fetching events for ${name} from MCP server...`);
       
-      // Note: This is a placeholder - in a real MCP implementation,
-      // you would use the MCP protocol to call the tool
-      // For demonstration, we'll simulate based on known data
+      // Ensure connected
+      await this.connect();
       
-      // Simulated response - in production this would call the actual MCP server
-      const mockData: Record<string, FamilyEventsResponse> = {
-        'Maya': {
-          name: 'Maya',
-          refDate: refDate?.toString() || '-255139200',
-          events: [
-            {
-              event_date: '2023-06-11T21:00:00.000Z',
-              event_type: 'University Graduation',
-              name: 'Maya',
-              event_epoch: '1686528000'
-            },
-            {
-              event_date: '2024-06-06T21:00:00.000Z',
-              event_type: 'Wedding date',
-              name: 'Maya',
-              event_epoch: '1717718400'
-            }
-          ],
-          count: 2
-        }
-      };
+      if (!this.client) {
+        throw new Error('MCP client not initialized');
+      }
 
-      const data = mockData[name];
-      if (!data) {
+      // Build arguments
+      const args: Record<string, any> = { name };
+      if (refDate !== undefined) {
+        args.refDate = refDate;
+      }
+
+      // Call the tool
+      const result = await this.client.callTool({
+        name: 'getEvents',
+        arguments: args
+      });
+
+      // Parse response
+      const resultData = result as any;
+      const content = resultData.content?.[0];
+      let eventsData: any;
+      
+      if (content?.type === 'text') {
+        try {
+          eventsData = JSON.parse(content.text);
+        } catch {
+          throw new Error(`Failed to parse events response: ${content.text}`);
+        }
+      } else {
+        eventsData = content;
+      }
+
+      // Check if we got events
+      if (!eventsData.events || eventsData.events.length === 0) {
         return {
           toolName: 'getEvents',
           success: false,
+          data: {
+            answer: `Sorry, I don't have any events for "${name}" in the family database.\n\nTry asking "What is DPOC?" or check if the name is spelled correctly.`
+          },
           error: `No events found for ${name}`,
-          reasoning: `Family member ${name} not found in database`
+          reasoning: `Family member ${name} has no events or was not found`
         };
       }
 
       return {
         toolName: 'getEvents',
         success: true,
-        data,
-        reasoning: `Retrieved ${data.count} event(s) for ${name} from family database`
+        data: {
+          name: eventsData.name,
+          refDate: eventsData.refDate || (refDate?.toString() || '-255139200'),
+          events: eventsData.events,
+          count: eventsData.events.length
+        },
+        reasoning: `Retrieved ${eventsData.events.length} event(s) for ${name} from MCP server`
       };
     } catch (error) {
+      console.error('❌ Error calling getEvents:', error);
       return {
         toolName: 'getEvents',
         success: false,
+        data: {
+          answer: `❌ Error retrieving events from MCP server: ${error instanceof Error ? error.message : 'Unknown error'}\n\nMake sure the family-mcp-server is running on ${this.baseUrl}`
+        },
         error: error instanceof Error ? error.message : 'Unknown error',
-        reasoning: 'Failed to retrieve family events'
+        reasoning: 'Failed to retrieve family events from MCP server'
       };
     }
   }
 
   /**
-   * Get available family-related tools
+   * Get family members list
+   */
+  async getFamily(name?: string): Promise<ToolResult> {
+    try {
+      console.log(`🔧 [Tool: getFamily] Fetching family members${name ? ` matching "${name}"` : ''}...`);
+      
+      // Ensure connected
+      await this.connect();
+      
+      if (!this.client) {
+        throw new Error('MCP client not initialized');
+      }
+
+      // Build arguments
+      const args: Record<string, any> = {};
+      if (name) {
+        args.name = name;
+      }
+
+      // Call the tool
+      const result = await this.client.callTool({
+        name: 'getFamily',
+        arguments: args
+      });
+
+      // Parse response
+      const resultData = result as any;
+      const content = resultData.content?.[0];
+      let familyData: any;
+      
+      if (content?.type === 'text') {
+        try {
+          familyData = JSON.parse(content.text);
+        } catch {
+          throw new Error(`Failed to parse family response: ${content.text}`);
+        }
+      } else {
+        familyData = content;
+      }
+
+      // Check if we got members
+      if (!familyData.members || familyData.members.length === 0) {
+        return {
+          toolName: 'getFamily',
+          success: false,
+          data: {
+            answer: name 
+              ? `Sorry, I couldn't find any family member matching "${name}".`
+              : `No family members found in the database.`
+          },
+          error: 'No family members found',
+          reasoning: name ? `No match for "${name}"` : 'Empty family database'
+        };
+      }
+
+      return {
+        toolName: 'getFamily',
+        success: true,
+        data: {
+          name: familyData.name,
+          members: familyData.members,
+          count: familyData.count || familyData.members.length
+        },
+        reasoning: name 
+          ? `Found ${familyData.count} family member(s) matching "${name}"`
+          : `Retrieved ${familyData.count} family members from database`
+      };
+    } catch (error) {
+      console.error('❌ Error calling getFamily:', error);
+      return {
+        toolName: 'getFamily',
+        success: false,
+        data: {
+          answer: `❌ Error retrieving family members from MCP server: ${error instanceof Error ? error.message : 'Unknown error'}\n\nMake sure the family-mcp-server is running on ${this.baseUrl}`
+        },
+        error: error instanceof Error ? error.message : 'Unknown error',
+        reasoning: 'Failed to retrieve family members from MCP server'
+      };
+    }
+  }
+
+  /**
+   * Disconnect from the MCP server
+   */
+  async disconnect(): Promise<void> {
+    if (this.client && this.isConnected) {
+      await this.client.close();
+      this.isConnected = false;
+      console.log('🔌 Disconnected from MCP server');
+    }
+  }
+
+  /**
+   * List all available tools from the MCP server
+   */
+  async listTools(): Promise<any[]> {
+    try {
+      await this.connect();
+      
+      if (!this.client) {
+        throw new Error('MCP client not initialized');
+      }
+
+      const result = await this.client.listTools();
+      return result.tools || [];
+    } catch (error) {
+      console.error('❌ Error listing MCP tools:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get available family-related tools (static list for tool selection)
    */
   getAvailableTools() {
     return [
@@ -123,6 +319,14 @@ export class FamilyMCPClient {
         parameters: {
           name: { type: 'string', required: true, description: 'Name of the family member' },
           refDate: { type: 'number', required: false, description: 'Reference date as EPOCH number' }
+        }
+      },
+      {
+        name: 'getFamily',
+        description: 'Get list of all family members or search for a specific member by name',
+        category: 'family' as const,
+        parameters: {
+          name: { type: 'string', required: false, description: 'Optional: name to filter family members' }
         }
       }
     ];

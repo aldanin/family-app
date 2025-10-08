@@ -69,20 +69,8 @@ async function runInteractive() {
         console.log('🤖 Agent:');
         console.log('─'.repeat(60));
         
-        if (response.result.answer) {
-          console.log(response.result.answer);
-        } else if (response.result.events) {
-          console.log(`\nFound ${response.result.count} events for ${response.result.name}:`);
-          response.result.events.forEach((event: any, i: number) => {
-            const date = new Date(event.event_date).toLocaleDateString();
-            console.log(`  ${i + 1}. ${event.event_type} - ${date}`);
-          });
-        } else if (response.result.dpoc) {
-          console.log(`DPOC: ${response.result.dpoc}`);
-          console.log(response.result.description);
-        } else {
-          console.log(JSON.stringify(response.result, null, 2));
-        }
+        // Unified response - just print the answer!
+        console.log(response.result.answer);
         
         console.log('\n' + '─'.repeat(60));
         console.log(`Tool: ${response.selectedTool} | Time: ${response.executionTime}ms`);

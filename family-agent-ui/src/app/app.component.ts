@@ -402,22 +402,8 @@ export class AppComponent {
     try {
       const response = await this.agentService.query(message, this.hybridMode);
       
-      // Format the response content
-      let content = '';
-      if (response.result.answer) {
-        content = response.result.answer;
-      } else if (response.result.events) {
-        content = `Found ${response.result.count} events for ${response.result.name}:\n\n`;
-        response.result.events.forEach((event: any, i: number) => {
-          const date = new Date(event.event_date).toLocaleDateString();
-          content += `${i + 1}. ${event.event_type} - ${date}\n`;
-        });
-      } else if (response.result.dpoc) {
-        const date = new Date(parseInt(response.result.dpoc) * 1000).toLocaleDateString();
-        content = `DPOC: ${date}\n${response.result.description}`;
-      } else {
-        content = JSON.stringify(response.result, null, 2);
-      }
+      // Unified response structure - just get the answer!
+      const content = response.result.answer || JSON.stringify(response.result, null, 2);
 
       this.messages.push({
         role: 'assistant',

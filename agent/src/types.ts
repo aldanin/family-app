@@ -22,12 +22,41 @@ export interface AgentQuery {
   context?: Record<string, any>;
 }
 
+/**
+ * Unified response structure for all agent queries
+ */
 export interface AgentResponse {
   query: string;
   selectedTool: string;
   reasoning: string;
-  result: any;
+  result: UnifiedResult;
   executionTime: number;
+}
+
+/**
+ * Unified result format - all tools return this structure
+ */
+export interface UnifiedResult {
+  // The main answer/content (always present)
+  answer: string;
+  
+  // Original data from the tool (optional, for advanced use)
+  rawData?: any;
+  
+  // Metadata
+  metadata?: {
+    toolName?: string;
+    model?: string;
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+    };
+    hasContext?: boolean;
+    eventCount?: number;
+    personName?: string;
+    memberCount?: number;
+  };
 }
 
 export interface FamilyEvent {

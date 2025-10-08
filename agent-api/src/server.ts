@@ -6,7 +6,7 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { FamilyAgent } from '../../agent/src/agent';
+import { FamilyAgent } from '../../agent/dist/agent';
 
 // Load environment variables
 dotenv.config();

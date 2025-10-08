@@ -1,9 +1,11 @@
 /**
  * Tool Selection Engine
  * This is the "brain" of the agent - it decides which tool to use based on the query
+ * Uses LLM-based tool selection (OpenAI function calling) instead of hard-coded rules
  */
 
 import { ToolDefinition } from './types';
+import OpenAI from 'openai';
 
 export interface ToolSelectionResult {
   selectedTool: string;
@@ -14,124 +16,108 @@ export interface ToolSelectionResult {
 
 export class ToolSelector {
   private availableTools: ToolDefinition[];
+  private openai: OpenAI | null = null;
 
-  constructor(tools: ToolDefinition[]) {
+  constructor(tools: ToolDefinition[], openaiApiKey?: string) {
     this.availableTools = tools;
+    
+    // Initialize OpenAI for LLM-based tool selection
+    if (openaiApiKey) {
+      this.openai = new OpenAI({ apiKey: openaiApiKey });
+    }
   }
 
   /**
    * Main tool selection logic
-   * This demonstrates how an agent analyzes a query and picks the right tool
+   * Uses LLM to intelligently select the right tool - NO HARD-CODED KEYWORDS!
    */
-  selectTool(query: string): ToolSelectionResult {
+  async selectTool(query: string): Promise<ToolSelectionResult> {
     console.log('\n🤖 [Agent Decision Process] Analyzing query...');
     console.log(`📝 Query: "${query}"`);
     console.log(`🔍 Available tools: ${this.availableTools.map(t => t.name).join(', ')}\n`);
 
-    const lowerQuery = query.toLowerCase();
-    
-    // Step 1: Check for family-related keywords
-    const familyKeywords = ['maya', 'family', 'event', 'wedding', 'graduation', 'birthday', 'dpoc', 'timeline'];
-    const hasFamilyKeyword = familyKeywords.some(keyword => lowerQuery.includes(keyword));
-    
-    if (hasFamilyKeyword) {
-      console.log('✓ Detected family-related keywords');
-      
-      // Check if asking about DPOC
-      if (lowerQuery.includes('dpoc') || lowerQuery.includes('oldest') || lowerQuery.includes('first family member')) {
-        console.log('  → Decision: Use getDPOC tool');
-        console.log('  → Reason: Query is about the Date Point of Commencement\n');
-        return {
-          selectedTool: 'getDPOC',
-          reasoning: 'Query asks about DPOC (oldest family member birthdate)',
-          confidence: 0.95
-        };
-      }
-      
-      // Check if asking about specific person's events
-      const personMatch = this.extractPersonName(query);
-      if (personMatch) {
-        console.log(`  → Detected person name: "${personMatch}"`);
-        console.log('  → Decision: Use getEvents tool');
-        console.log(`  → Reason: Query is about events for ${personMatch}\n`);
-        return {
-          selectedTool: 'getEvents',
-          reasoning: `Query asks about events for family member "${personMatch}"`,
-          confidence: 0.9,
-          parameters: { name: personMatch }
-        };
-      }
-      
-      // Generic family query
-      console.log('  → Decision: Use getDPOC tool (default for family queries)');
-      console.log('  → Reason: Family-related but no specific person identified\n');
-      return {
-        selectedTool: 'getDPOC',
-        reasoning: 'Family-related query, defaulting to DPOC',
-        confidence: 0.6
-      };
+    // If OpenAI is not configured, fall back to simple heuristic
+    if (!this.openai) {
+      console.log('⚠️  OpenAI not configured - using fallback heuristic');
+      return this.fallbackSelection(query);
     }
-    
-    // Step 2: Check for general knowledge queries
-    const generalPatterns = [
-      /what is \d+/i,  // Math queries
-      /calculate/i,
-      /what time/i,
-      /what date/i,
-      /today/i,
-      /define/i,
-      /what is (ai|agent|mcp)/i
-    ];
-    
-    const isGeneralQuery = generalPatterns.some(pattern => pattern.test(query));
-    
-    if (isGeneralQuery) {
-      console.log('✓ Detected general knowledge query pattern');
-      console.log('  → Decision: Use GeneralKnowledge tool');
-      console.log('  → Reason: Query matches general knowledge patterns (math, time, definitions)\n');
+
+    try {
+      // Let GPT decide which tool to use based on tool descriptions!
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a tool selection assistant for an AI agent that has access to a family database via MCP server.
+
+Available tools:
+${this.availableTools.map(t => `- ${t.name}: ${t.description}`).join('\n')}
+
+CRITICAL RULES:
+1. ANY query about specific people (Roy, Maya, Alon, Amit, etc.) → MUST use needsFamilyContext=true
+2. ANY query about birthdates, ages, events, family members → MUST use needsFamilyContext=true
+3. The family database contains: names, birthdates, events, relationships
+4. Examples that NEED family context:
+   - "When was Roy born?" → needsFamilyContext: true
+   - "How old is Maya?" → needsFamilyContext: true
+   - "Show me Alon's events" → needsFamilyContext: true
+   - "Who is in the family?" → needsFamilyContext: true
+   
+5. Examples that DON'T need family context:
+   - "What is AI?" → needsFamilyContext: false
+   - "Explain quantum physics" → needsFamilyContext: false
+   - "What's 2+2?" → needsFamilyContext: false
+
+Always use "answerGeneralQuery" as the tool.
+Respond in JSON format: {"tool": "answerGeneralQuery", "reasoning": "why", "needsFamilyContext": true/false}`
+          },
+          {
+            role: 'user',
+            content: query
+          }
+        ],
+        temperature: 0.1,  // Lower temperature for more consistent decisions
+        response_format: { type: 'json_object' }
+      });
+
+      const selection = JSON.parse(response.choices[0].message.content || '{}');
+      
+      console.log('✓ LLM-based tool selection:');
+      console.log(`  → Tool: ${selection.tool}`);
+      console.log(`  → Reasoning: ${selection.reasoning}`);
+      console.log(`  → Family Context: ${selection.needsFamilyContext ? 'Yes' : 'No'}\n`);
+      
       return {
-        selectedTool: 'answerGeneralQuery',
-        reasoning: 'Query is a general knowledge question (math, time, or definition)',
-        confidence: 0.85,
-        parameters: { query }
+        selectedTool: selection.tool || 'answerGeneralQuery',
+        reasoning: selection.reasoning || 'LLM-based selection',
+        confidence: 0.95,
+        parameters: { 
+          query, 
+          needsFamilyContext: selection.needsFamilyContext || false 
+        }
       };
+      
+    } catch (error) {
+      console.error('❌ LLM tool selection failed, using fallback:', error);
+      return this.fallbackSelection(query);
     }
-    
-    // Step 3: Default to general knowledge for unknown queries
-    console.log('⚠ No specific pattern matched');
-    console.log('  → Decision: Use GeneralKnowledge tool (fallback)');
-    console.log('  → Reason: Could not classify query, using general handler\n');
-    return {
-      selectedTool: 'answerGeneralQuery',
-      reasoning: 'Query type unclear, using general knowledge handler as fallback',
-      confidence: 0.5,
-      parameters: { query }
-    };
   }
 
   /**
-   * Extract person name from query
-   * Simple implementation - in production, use NER (Named Entity Recognition)
+   * Fallback selection when OpenAI is not available
+   * Simple heuristic - assumes everything might need family context
    */
-  private extractPersonName(query: string): string | null {
-    // Known family members (in production, this would come from the MCP server)
-    const knownNames = ['Maya', 'John', 'Sarah', 'David', 'Emma'];
+  private fallbackSelection(query: string): ToolSelectionResult {
+    console.log('  → Decision: Use answerGeneralQuery (fallback mode)');
+    console.log('  → Reason: OpenAI not configured, assuming general query\n');
     
-    for (const name of knownNames) {
-      if (query.toLowerCase().includes(name.toLowerCase())) {
-        return name;
-      }
-    }
-    
-    // Try to extract capitalized words (simple name detection)
-    const words = query.split(' ');
-    for (const word of words) {
-      if (/^[A-Z][a-z]+$/.test(word) && word.length > 2) {
-        return word;
-      }
-    }
-    
-    return null;
+    return {
+      selectedTool: 'answerGeneralQuery',
+      reasoning: 'Fallback mode - OpenAI not configured',
+      confidence: 0.5,
+      parameters: { query, needsFamilyContext: true } // Safe default
+    };
   }
 
   /**
@@ -142,28 +128,29 @@ export class ToolSelector {
 Tool Selection Strategy:
 ========================
 
-1. FAMILY QUERIES (Priority 1)
-   - Keywords: family member names, events, dpoc, timeline
-   - Tools: getDPOC, getEvents
-   - Examples:
-     * "What is DPOC?" → getDPOC
-     * "Show Maya's events" → getEvents(name: "Maya")
-     * "When did Maya graduate?" → getEvents(name: "Maya")
+LLM-BASED INTELLIGENT SELECTION - NO HARD-CODED RULES!
 
-2. GENERAL KNOWLEDGE (Priority 2)
-   - Patterns: math, time/date, definitions
-   - Tool: answerGeneralQuery
-   - Examples:
-     * "What is 5 + 3?" → Math handler
-     * "What time is it?" → DateTime handler
-     * "What is AI?" → Definition handler
+How it works:
+1. Agent receives a query from the user
+2. Tool Selector sends the query + tool descriptions to GPT
+3. GPT analyzes the query and decides which tool to use
+4. GPT returns: tool name, reasoning, and whether family context is needed
+5. Agent executes the selected tool
 
-3. FALLBACK (Priority 3)
-   - When query doesn't match any pattern
-   - Tool: answerGeneralQuery (general handler)
-   - The agent explains it needs more context
+Examples:
+- "When was Alon born?" → GPT selects: answerGeneralQuery + family context
+- "What is AI?" → GPT selects: answerGeneralQuery (no context)
+- "How old is Maya?" → GPT selects: answerGeneralQuery + family context
 
-The agent logs its decision process so you can see WHY it chose each tool!
+Benefits:
+✅ NO hard-coded keywords (maya, alon, born, etc.)
+✅ NO hard-coded logic (if/else statements)
+✅ LLM understands context and intent
+✅ Works with new family members automatically
+✅ Handles complex queries naturally
+
+Fallback:
+- If OpenAI is not configured, uses simple heuristic (assumes family context)
     `.trim();
   }
 }

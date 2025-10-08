@@ -53,24 +53,75 @@ export class GeneralKnowledgeTool {
   private async askGPT(query: string, context?: any): Promise<ToolResult> {
     try {
       console.log('   → Calling OpenAI API...');
+      if (context) {
+        console.log('   → WITH family context:', context.members?.length || 0, 'members');
+      }
       
       // Build the prompt with optional context from MCP tools
       const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
         {
           role: 'system',
-          content: `You are a helpful AI assistant. You can answer general questions and also work with family data when provided.
-          
-When family context is provided, incorporate it naturally into your responses.
-Keep answers concise and friendly.`
+          content: `You are a helpful AI assistant with access to a family database.
+
+CRITICAL INSTRUCTIONS:
+- When family data is provided, you MUST use the EXACT data from the database
+- DO NOT make up dates, ages, or information - ONLY use what's in the database
+- If you see family member data, use their EXACT birthdate from the database
+- Calculate ages based on today's date (${new Date().toISOString().split('T')[0]}) and the birthdate in the database
+
+Examples of correct answers:
+- "Amit was born on February 26, 1994" (using exact date from database)
+- "Maya is 26 years old" (calculated from birthdate: 1998-12-08)
+
+Keep answers concise, friendly, and ACCURATE using the database.`
         }
       ];
 
       // Add context if available (e.g., family data from MCP server)
-      if (context) {
+      if (context && context.members) {
+        const membersList = context.members.map((m: any) => 
+          `- ${m.name}: born ${m.birthdate}`
+        ).join('\n');
+        
+        let contextMessage = `FAMILY DATABASE (USE THIS EXACT DATA):
+
+${membersList}`;
+
+        // Add events if available
+        if (context.events && context.events.events) {
+          console.log('   → DEBUG: context.events =', JSON.stringify(context.events, null, 2));
+          
+          const eventsList = context.events.events.map((e: any) => {
+            // Format the date nicely
+            const date = new Date(e.event_date);
+            const dateStr = date.toLocaleDateString('en-US', { 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            });
+            
+            return `  - ${dateStr}: ${e.event_type}`;
+          }).join('\n');
+          
+          contextMessage += `\n\nEVENTS for ${context.events.name}:
+${eventsList}`;
+          
+          console.log('   → DEBUG: Events list being sent to GPT:\n', eventsList);
+        } else {
+          console.log('   → DEBUG: No events found. context.events =', context.events);
+        }
+
+        contextMessage += `\n\nAnswer the user's question using ONLY the information above. Do not invent or guess data.`;
+        
         messages.push({
           role: 'system',
-          content: `Context from family database: ${JSON.stringify(context, null, 2)}`
+          content: contextMessage
         });
+        
+        console.log('   → Sending family data to GPT');
+        if (context.events) {
+          console.log(`   → Including ${context.events.events?.length || 0} events`);
+        }
       }
 
       messages.push({
@@ -81,7 +132,7 @@ Keep answers concise and friendly.`
       const completion = await this.openai!.chat.completions.create({
         model: this.model,
         messages,
-        temperature: 0.7,
+        temperature: 0.1,  // Lower temperature for more factual responses
         max_tokens: 500
       });
 
@@ -89,6 +140,7 @@ Keep answers concise and friendly.`
       const usage = completion.usage;
 
       console.log(`   ✓ GPT response received (${usage?.total_tokens || 0} tokens)`);
+      console.log(`   📝 GPT Answer: "${answer.substring(0, 200)}${answer.length > 200 ? '...' : ''}"`);
 
       return {
         toolName: 'GeneralKnowledge-OpenAI',
