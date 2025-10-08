@@ -175,7 +175,10 @@ export class FamilyAgent {
       console.log('📤 RESPONSE SUMMARY:');
       console.log(`   Query: "${response.query}"`);
       console.log(`   Tool Used: ${response.selectedTool}`);
-      console.log(`   Result Preview: ${JSON.stringify(response.result).substring(0, 100)}...`);
+      
+      const resultStr = JSON.stringify(response.result || {});
+      const preview = resultStr.length > 100 ? resultStr.substring(0, 100) + '...' : resultStr;
+      console.log(`   Result Preview: ${preview}`);
       console.log('');
       
       // Small delay for readability
