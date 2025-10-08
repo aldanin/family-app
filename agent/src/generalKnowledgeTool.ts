@@ -1,49 +1,41 @@
 /**
  * General Knowledge Tool
- * Handles queries that don't require family-specific data
+ * Uses OpenAI's GPT API to answer general questions
+ * This allows the agent to combine GPT intelligence with MCP server tools
  */
 
+import OpenAI from 'openai';
 import { ToolResult } from './types';
 
 export class GeneralKnowledgeTool {
+  private openai: OpenAI | null = null;
+  private model: string;
+
+  constructor(apiKey?: string, model: string = 'gpt-4o-mini') {
+    this.model = model;
+    
+    if (apiKey) {
+      this.openai = new OpenAI({ apiKey });
+      console.log(`✅ OpenAI initialized with model: ${model}`);
+    } else {
+      console.log('⚠️  OpenAI API key not provided. Using fallback responses.');
+    }
+  }
   
   /**
-   * Answer general questions using built-in knowledge
+   * Answer general questions using OpenAI GPT
    */
-  async answerGeneralQuery(query: string): Promise<ToolResult> {
-    console.log(`🔧 [Tool: GeneralKnowledge] Processing general query: "${query}"`);
+  async answerGeneralQuery(query: string, context?: any): Promise<ToolResult> {
+    console.log(`🔧 [Tool: GeneralKnowledge/OpenAI] Processing query: "${query}"`);
 
     try {
-      // Simple pattern matching for demonstration
-      // In a real agent, this would use an LLM or knowledge base
-      
-      const lowerQuery = query.toLowerCase();
-      
-      // Math queries
-      if (lowerQuery.includes('calculate') || lowerQuery.includes('what is') && /[\d+\-*/]/.test(query)) {
-        return this.handleMathQuery(query);
+      // If OpenAI is available, use it
+      if (this.openai) {
+        return await this.askGPT(query, context);
       }
       
-      // Date/time queries
-      if (lowerQuery.includes('what time') || lowerQuery.includes('what date') || lowerQuery.includes('today')) {
-        return this.handleDateTimeQuery(query);
-      }
-      
-      // Definition queries
-      if (lowerQuery.startsWith('what is') || lowerQuery.startsWith('define')) {
-        return this.handleDefinitionQuery(query);
-      }
-      
-      // Default response
-      return {
-        toolName: 'GeneralKnowledge',
-        success: true,
-        data: {
-          answer: `I understand you're asking: "${query}". This is a general query that doesn't require family data. In a production system, this would be answered by an LLM or knowledge base.`,
-          type: 'general'
-        },
-        reasoning: 'General query handled with built-in knowledge'
-      };
+      // Fallback to simple pattern matching if no API key
+      return this.fallbackHandler(query);
       
     } catch (error) {
       return {
@@ -55,9 +47,107 @@ export class GeneralKnowledgeTool {
     }
   }
 
+  /**
+   * Use OpenAI GPT to answer the query
+   */
+  private async askGPT(query: string, context?: any): Promise<ToolResult> {
+    try {
+      console.log('   → Calling OpenAI API...');
+      
+      // Build the prompt with optional context from MCP tools
+      const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+        {
+          role: 'system',
+          content: `You are a helpful AI assistant. You can answer general questions and also work with family data when provided.
+          
+When family context is provided, incorporate it naturally into your responses.
+Keep answers concise and friendly.`
+        }
+      ];
+
+      // Add context if available (e.g., family data from MCP server)
+      if (context) {
+        messages.push({
+          role: 'system',
+          content: `Context from family database: ${JSON.stringify(context, null, 2)}`
+        });
+      }
+
+      messages.push({
+        role: 'user',
+        content: query
+      });
+
+      const completion = await this.openai!.chat.completions.create({
+        model: this.model,
+        messages,
+        temperature: 0.7,
+        max_tokens: 500
+      });
+
+      const answer = completion.choices[0]?.message?.content || 'No response generated';
+      const usage = completion.usage;
+
+      console.log(`   ✓ GPT response received (${usage?.total_tokens || 0} tokens)`);
+
+      return {
+        toolName: 'GeneralKnowledge-OpenAI',
+        success: true,
+        data: {
+          answer,
+          model: this.model,
+          usage: {
+            prompt_tokens: usage?.prompt_tokens,
+            completion_tokens: usage?.completion_tokens,
+            total_tokens: usage?.total_tokens
+          },
+          hasContext: !!context
+        },
+        reasoning: context 
+          ? 'Answered using OpenAI GPT with family context'
+          : 'Answered using OpenAI GPT'
+      };
+      
+    } catch (error) {
+      console.error('   ✗ OpenAI API error:', error);
+      
+      // Fallback if OpenAI fails
+      return this.fallbackHandler(query);
+    }
+  }
+
+  /**
+   * Fallback handler when OpenAI is not available
+   */
+  private fallbackHandler(query: string): ToolResult {
+    console.log('   → Using fallback handler (no OpenAI)');
+    
+    const lowerQuery = query.toLowerCase();
+    
+    // Math queries
+    if (lowerQuery.includes('calculate') || /\d+\s*[\+\-\*\/]\s*\d+/.test(query)) {
+      return this.handleMathQuery(query);
+    }
+    
+    // Date/time queries
+    if (lowerQuery.includes('what time') || lowerQuery.includes('what date') || lowerQuery.includes('today')) {
+      return this.handleDateTimeQuery(query);
+    }
+    
+    // Default response
+    return {
+      toolName: 'GeneralKnowledge-Fallback',
+      success: true,
+      data: {
+        answer: `I understand you're asking: "${query}". To get intelligent AI responses, please configure your OpenAI API key in the .env file.`,
+        type: 'fallback'
+      },
+      reasoning: 'Fallback response (OpenAI not configured)'
+    };
+  }
+
   private handleMathQuery(query: string): ToolResult {
     try {
-      // Extract simple math expressions (e.g., "what is 2 + 2")
       const match = query.match(/(\d+)\s*([\+\-\*\/])\s*(\d+)/);
       if (match) {
         const [, a, op, b] = match;
@@ -81,7 +171,7 @@ export class GeneralKnowledgeTool {
         };
       }
     } catch (error) {
-      // Fall through to default handler
+      // Fall through
     }
     
     return {
@@ -116,43 +206,15 @@ export class GeneralKnowledgeTool {
     };
   }
 
-  private handleDefinitionQuery(query: string): ToolResult {
-    // Simple definition lookup
-    const definitions: Record<string, string> = {
-      'ai': 'Artificial Intelligence - the simulation of human intelligence by machines',
-      'agent': 'An autonomous entity that perceives its environment and takes actions to achieve goals',
-      'mcp': 'Model Context Protocol - a protocol for AI models to interact with external tools and data sources',
-      'dpoc': 'Date Point of Commencement - the oldest birthdate in a family timeline system'
-    };
-    
-    const lowerQuery = query.toLowerCase();
-    for (const [term, definition] of Object.entries(definitions)) {
-      if (lowerQuery.includes(term)) {
-        return {
-          toolName: 'GeneralKnowledge-Definition',
-          success: true,
-          data: { term, definition },
-          reasoning: `Provided definition for "${term}"`
-        };
-      }
-    }
-    
-    return {
-      toolName: 'GeneralKnowledge-Definition',
-      success: true,
-      data: { answer: 'Definition not found in knowledge base' },
-      reasoning: 'Term not found in built-in definitions'
-    };
-  }
-
   getAvailableTools() {
     return [
       {
         name: 'answerGeneralQuery',
-        description: 'Answer general questions using built-in knowledge (math, dates, definitions, etc.)',
+        description: 'Answer general questions using OpenAI GPT (can be combined with family data context)',
         category: 'general' as const,
         parameters: {
-          query: { type: 'string', required: true, description: 'The question to answer' }
+          query: { type: 'string', required: true, description: 'The question to answer' },
+          context: { type: 'object', required: false, description: 'Optional context from other tools' }
         }
       }
     ];

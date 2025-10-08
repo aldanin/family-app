@@ -13,9 +13,9 @@ export class FamilyAgent {
   private generalTool: GeneralKnowledgeTool;
   private toolSelector: ToolSelector;
 
-  constructor(mcpServerUrl?: string) {
+  constructor(mcpServerUrl?: string, openaiApiKey?: string, openaiModel?: string) {
     this.familyClient = new FamilyMCPClient(mcpServerUrl);
-    this.generalTool = new GeneralKnowledgeTool();
+    this.generalTool = new GeneralKnowledgeTool(openaiApiKey, openaiModel);
     
     // Gather all available tools
     const allTools: ToolDefinition[] = [
@@ -29,7 +29,7 @@ export class FamilyAgent {
   /**
    * Process a query - this is the main entry point
    */
-  async processQuery(query: string): Promise<AgentResponse> {
+  async processQuery(query: string, combineWithContext: boolean = false): Promise<AgentResponse> {
     const startTime = Date.now();
     
     console.log('\n' + '='.repeat(80));
@@ -50,6 +50,22 @@ export class FamilyAgent {
       console.log('⚙️  EXECUTING TOOL...\n');
       
       let result;
+      let familyContext;
+      
+      // Check if this is a hybrid query (needs both family data AND GPT)
+      if (combineWithContext && selection.selectedTool === 'answerGeneralQuery') {
+        console.log('🔗 HYBRID MODE: Fetching family context first...\n');
+        
+        // Try to extract family member name from query
+        const personMatch = this.extractPersonName(query);
+        if (personMatch) {
+          const familyResult = await this.familyClient.getEvents(personMatch);
+          if (familyResult.success) {
+            familyContext = familyResult.data;
+            console.log(`   ✓ Retrieved family context for ${personMatch}\n`);
+          }
+        }
+      }
       
       switch (selection.selectedTool) {
         case 'getDPOC':
@@ -65,7 +81,8 @@ export class FamilyAgent {
           break;
           
         case 'answerGeneralQuery':
-          result = await this.generalTool.answerGeneralQuery(query);
+          // Pass family context to GPT if available
+          result = await this.generalTool.answerGeneralQuery(query, familyContext);
           break;
           
         default:
@@ -109,6 +126,21 @@ export class FamilyAgent {
         executionTime
       };
     }
+  }
+
+  /**
+   * Extract person name from query (helper method)
+   */
+  private extractPersonName(query: string): string | null {
+    const knownNames = ['Maya', 'John', 'Sarah', 'David', 'Emma'];
+    
+    for (const name of knownNames) {
+      if (query.toLowerCase().includes(name.toLowerCase())) {
+        return name;
+      }
+    }
+    
+    return null;
   }
 
   /**

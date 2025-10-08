@@ -1,29 +1,40 @@
 # Family AI Agent
 
-An educational TypeScript AI agent that demonstrates **intelligent tool selection** between family-specific queries (using your family-mcp-server) and general knowledge queries.
+An educational TypeScript AI agent that demonstrates **intelligent tool selection** and **hybrid responses** by combining your family-mcp-server data with OpenAI's GPT.
 
 ## 🎯 What This Demonstrates
 
-This agent shows how AI agents decide which tool to use based on the query type:
+This agent shows how AI agents decide which tool to use and combine multiple data sources:
 
 1. **Family Queries** → Uses family-mcp-server tools (getDPOC, getEvents)
-2. **General Queries** → Uses built-in knowledge (math, time, definitions)
-3. **Decision Logging** → Shows WHY each tool was selected
+2. **General Queries** → Uses OpenAI GPT for intelligent responses
+3. **Hybrid Queries** → Combines family data WITH GPT analysis! 🌟
+4. **Decision Logging** → Shows WHY each tool was selected
+
+### Why This Matters
+
+Real-world AI agents need to:
+- Select the right tool for each query
+- Combine data from multiple sources
+- Provide context-aware responses
+- Make transparent decisions
+
+This project shows you exactly how to build that!
 
 ## 🏗️ Architecture
 
 ```
 User Query
     ↓
-Tool Selector (Brain)
+Tool Selector (Brain) ← Analyzes query type
     ↓
-┌─────────────┬─────────────┐
-│   Family    │   General   │
-│     MCP     │  Knowledge  │
-│   Client    │    Tool     │
-└─────────────┴─────────────┘
+┌─────────────┬─────────────┬──────────────┐
+│   Family    │   OpenAI    │   Hybrid     │
+│     MCP     │     GPT     │  (Both!)     │
+│   Client    │     API     │              │
+└─────────────┴─────────────┴──────────────┘
     ↓
-Response
+Combined Response
 ```
 
 ### Components
@@ -43,17 +54,26 @@ cd agent
 npm install
 ```
 
-### 2. Configure (Optional)
+### 2. Configure Your API Keys
 
-Copy `.env.example` to `.env` and adjust if needed:
+**Important:** Copy `.env.example` to `.env` and add your OpenAI API key:
 
 ```bash
 copy .env.example .env
 ```
 
-Default settings:
-- MCP Server: `http://localhost:6402`
-- Agent Port: `3000`
+Edit `.env` and add your OpenAI API key:
+
+```env
+MCP_SERVER_URL=http://localhost:6402
+AGENT_PORT=3000
+
+# Get your API key from https://platform.openai.com/api-keys
+OPENAI_API_KEY=sk-your-actual-api-key-here
+OPENAI_MODEL=gpt-4o-mini
+```
+
+**Note:** The agent will work without an API key (using fallback responses), but you'll miss the GPT-powered features!
 
 ### 3. Build
 
@@ -77,11 +97,26 @@ This will run several example queries and show you how the agent selects tools!
 - "Show me Maya's events" → `getEvents` tool
 - "When did Maya graduate?" → `getEvents` tool
 
-### General Queries (→ built-in knowledge)
+### General Queries (→ OpenAI GPT)
 
-- "What is 15 + 27?" → Math handler
-- "What time is it?" → DateTime handler
-- "What is AI?" → Definition handler
+- "Explain what artificial intelligence is" → GPT response
+- "What are the benefits of TypeScript?" → GPT response
+- "Tell me about wedding traditions" → GPT response
+
+### 🌟 Hybrid Queries (→ MCP + GPT Combined!)
+
+These are where it gets interesting! The agent fetches family data and asks GPT to analyze it:
+
+- **"Tell me about Maya's achievements and explain why they're important"**
+  - Step 1: Fetches Maya's events from MCP server
+  - Step 2: Passes events to GPT for intelligent analysis
+  - Result: Context-aware response combining both!
+
+- **"What can you tell me about weddings? Also, when did Maya get married?"**
+  - Combines general knowledge about weddings with Maya's specific wedding date
+
+- **"Tell me an interesting fact about Maya based on her events"**
+  - GPT analyzes Maya's timeline and generates insights
 
 ## 🔍 Understanding Tool Selection
 
@@ -96,6 +131,27 @@ The agent logs its decision-making process:
   → Detected person name: "Maya"
   → Decision: Use getEvents tool
   → Reason: Query is about events for Maya
+
+⚙️  EXECUTING TOOL...
+🔧 [Tool: getEvents] Fetching events for Maya...
+   ✓ Retrieved 2 event(s) for Maya from family database
+```
+
+### Hybrid Query Example
+
+```
+Query: "Tell me about Maya's achievements"
+
+🔗 HYBRID MODE: Fetching family context first...
+   ✓ Retrieved family context for Maya
+
+🔧 [Tool: GeneralKnowledge/OpenAI] Processing query...
+   → Calling OpenAI API...
+   → Passing family context: Maya's graduation and wedding events
+   ✓ GPT response received (324 tokens)
+
+Result: GPT analyzes Maya's actual events and provides
+        intelligent commentary about her achievements!
 ```
 
 ### Selection Logic
