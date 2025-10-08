@@ -1,0 +1,19 @@
+# Don't commit dependencies
+node_modules/
+dist/
+
+# Environment variables
+.env
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
