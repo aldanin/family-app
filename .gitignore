@@ -2,6 +2,9 @@
 node_modules/
 dist/
 
+# Angular cache
+.angular/
+
 # Environment variables
 .env
 
