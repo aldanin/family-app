@@ -79,36 +79,56 @@ Keep answers concise, friendly, and ACCURATE using the database.`
 
       // Add context if available (e.g., family data from MCP server)
       if (context && context.members) {
-        const membersList = context.members.map((m: any) => 
-          `- ${m.name}: born ${m.birthdate}`
-        ).join('\n');
+        // Dynamically format member data based on actual fields (schema-agnostic)
+        const membersList = context.members.map((m: any) => {
+          // Convert object to readable format, excluding technical fields
+          const excludeFields = ['birth_epoch', 'member_id', 'id'];
+          const entries = Object.entries(m)
+            .filter(([key]) => !excludeFields.includes(key))
+            .map(([key, value]) => {
+              // Format field names nicely (e.g., father_name -> father)
+              const displayKey = key.replace(/_name$/, '').replace(/_/g, ' ');
+              return `${displayKey}: ${value}`;
+            });
+          
+          return `- ${entries.join(', ')}`;
+        }).join('\n');
+        
+        console.log('   → Formatted member data (schema-agnostic):\n', membersList.substring(0, 300) + '...');
         
         let contextMessage = `FAMILY DATABASE (USE THIS EXACT DATA):
 
 ${membersList}`;
 
-        // Add events if available
+        // Add events if available (schema-agnostic)
         if (context.events && context.events.events) {
-          console.log('   → DEBUG: context.events =', JSON.stringify(context.events, null, 2));
-          
           const eventsList = context.events.events.map((e: any) => {
-            // Format the date nicely
-            const date = new Date(e.event_date);
-            const dateStr = date.toLocaleDateString('en-US', { 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
-            });
+            // Dynamically format events based on actual fields
+            const excludeFields = ['event_epoch', 'name']; // Exclude technical/redundant fields
+            const entries = Object.entries(e)
+              .filter(([key]) => !excludeFields.includes(key))
+              .map(([key, value]) => {
+                // Special handling for dates
+                if (key.includes('date') && value) {
+                  const date = new Date(value as string);
+                  return date.toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  });
+                }
+                // Format field names nicely
+                const displayKey = key.replace(/^event_/, '').replace(/_/g, ' ');
+                return `${value}`;
+              });
             
-            return `  - ${dateStr}: ${e.event_type}`;
+            return `  - ${entries.join(': ')}`;
           }).join('\n');
           
           contextMessage += `\n\nEVENTS for ${context.events.name}:
 ${eventsList}`;
           
-          console.log('   → DEBUG: Events list being sent to GPT:\n', eventsList);
-        } else {
-          console.log('   → DEBUG: No events found. context.events =', context.events);
+          console.log('   → Including events (schema-agnostic)');
         }
 
         contextMessage += `\n\nAnswer the user's question using ONLY the information above. Do not invent or guess data.`;
@@ -118,7 +138,7 @@ ${eventsList}`;
           content: contextMessage
         });
         
-        console.log('   → Sending family data to GPT');
+        console.log('   → Sending family data to GPT (schema-agnostic formatting)');
         if (context.events) {
           console.log(`   → Including ${context.events.events?.length || 0} events`);
         }

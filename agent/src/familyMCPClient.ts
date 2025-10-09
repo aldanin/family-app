@@ -12,13 +12,14 @@ export class FamilyMCPClient {
   private client: Client | null = null;
   private baseUrl: string;
   private isConnected: boolean = false;
+  private toolSchemas: Map<string, any> = new Map(); // Cache tool schemas
 
   constructor(baseUrl: string = 'http://localhost:6402/sse') {
     this.baseUrl = baseUrl;
   }
 
   /**
-   * Connect to the MCP server
+   * Connect to the MCP server and fetch schemas
    */
   private async connect(): Promise<void> {
     if (this.isConnected && this.client) {
@@ -44,10 +45,46 @@ export class FamilyMCPClient {
       this.isConnected = true;
       
       console.log('✅ Connected to MCP server!');
+      
+      // Fetch tool schemas from the server
+      await this.fetchToolSchemas();
     } catch (error) {
       console.error('❌ Failed to connect to MCP server:', error);
       throw error;
     }
+  }
+
+  /**
+   * Fetch tool schemas from MCP server
+   */
+  private async fetchToolSchemas(): Promise<void> {
+    try {
+      if (!this.client) return;
+      
+      const result = await this.client.listTools();
+      const tools = result.tools || [];
+      
+      console.log(`📋 Discovered ${tools.length} tools from MCP server:`);
+      
+      for (const tool of tools) {
+        this.toolSchemas.set(tool.name, tool);
+        console.log(`   - ${tool.name}: ${tool.description || 'No description'}`);
+        
+        // Log schema information
+        if (tool.inputSchema) {
+          console.log(`     Input: ${JSON.stringify(tool.inputSchema.properties || {})}`);
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️  Could not fetch tool schemas:', error);
+    }
+  }
+
+  /**
+   * Get schema for a specific tool
+   */
+  getToolSchema(toolName: string): any | null {
+    return this.toolSchemas.get(toolName) || null;
   }
 
   /**

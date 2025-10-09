@@ -69,6 +69,7 @@ export class FamilyAgent {
           familyContext = familyResult.data;
           console.log(`   ✓ Retrieved family database (${familyContext.count} members)`);
           console.log(`   ✓ Family members:`, familyContext.members.map((m: any) => m.name).join(', '));
+          console.log(`   → DEBUG: Sample member data:`, JSON.stringify(familyContext.members[0], null, 2));
           
           // If it's an event query, also fetch events for the mentioned person
           if (isEventQuery) {
