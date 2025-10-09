@@ -52,58 +52,70 @@ export class FamilyAgent {
       console.log('⚙️  EXECUTING TOOL...\n');
       
       let result;
-      let familyContext;
+      let familyContext: { members?: any[], count?: number, events?: any } = {};
       
       // If this is a family query, fetch relevant family data and let GPT reason about it
       if (selection.selectedTool === 'answerGeneralQuery' && selection.parameters?.needsFamilyContext) {
         console.log('🔗 FETCHING FAMILY CONTEXT for GPT...');
         console.log(`   needsFamilyContext = ${selection.parameters.needsFamilyContext}\n`);
         
-        const lowerQuery = selection.parameters.query?.toLowerCase() || '';
-        const isEventQuery = lowerQuery.includes('event') || lowerQuery.includes('graduation') || 
-                            lowerQuery.includes('wedding') || lowerQuery.includes('timeline');
+        familyContext = {};
         
-        // Always get family members for context
-        const familyResult = await this.familyClient.getFamily();
-        if (familyResult.success) {
-          familyContext = familyResult.data;
-          console.log(`   ✓ Retrieved family database (${familyContext.count} members)`);
-          console.log(`   ✓ Family members:`, familyContext.members.map((m: any) => m.name).join(', '));
-          console.log(`   → DEBUG: Sample member data:`, JSON.stringify(familyContext.members[0], null, 2));
+        // Fetch members if LLM decided it's needed
+        if (selection.parameters.fetchMembers) {
+          console.log('   → LLM requested: Fetch family members');
+          const familyResult = await this.familyClient.getFamily();
+          if (familyResult.success) {
+            familyContext.members = familyResult.data.members;
+            familyContext.count = familyResult.data.count;
+            console.log(`   ✓ Retrieved ${familyContext.count} family members`);
+            if (familyContext.members) {
+              console.log(`   ✓ Members:`, familyContext.members.map((m: any) => m.name).join(', '));
+            }
+          } else {
+            console.error('   ❌ Failed to fetch family members:', familyResult.error);
+          }
+        }
+        
+        // Fetch events if LLM decided it's needed
+        if (selection.parameters.fetchEvents) {
+          console.log('   → LLM requested: Fetch events');
           
-          // If it's an event query, also fetch events for the mentioned person
-          if (isEventQuery) {
-            console.log('   → Detected EVENT query, fetching events...');
-            
-            // Try to find person name in query
-            const personName = familyContext.members.find((m: any) => 
+          // Try to find person name in query
+          const lowerQuery = selection.parameters.query?.toLowerCase() || '';
+          let personName: string | undefined;
+          
+          // If we have members data, search for name in query
+          if (familyContext.members) {
+            personName = familyContext.members.find((m: any) => 
               lowerQuery.includes(m.name.toLowerCase())
             )?.name;
-            
-            if (personName) {
-              console.log(`   → Fetching events for: ${personName}`);
-              const eventsResult = await this.familyClient.getEvents(personName);
-              
-              if (eventsResult.success) {
-                // Add events to context
-                familyContext.events = eventsResult.data;
-                console.log(`   ✓ Retrieved ${eventsResult.data.events?.length || 0} events for ${personName}`);
-              }
-            }
           }
           
-          console.log('   ✓ GPT will analyze this data and answer the query\n');
-        } else {
-          console.error('   ❌ Failed to fetch family data:', familyResult.error);
+          if (personName) {
+            console.log(`   → Fetching events for: ${personName}`);
+            const eventsResult = await this.familyClient.getEvents(personName);
+            
+            if (eventsResult.success) {
+              familyContext.events = eventsResult.data;
+              console.log(`   ✓ Retrieved ${eventsResult.data.events?.length || 0} events for ${personName}`);
+            } else {
+              console.log(`   ⚠️  No events found for ${personName}`);
+            }
+          } else {
+            console.log(`   ⚠️  Could not identify person name in query for event lookup`);
+          }
         }
+        
+        console.log('   ✓ GPT will analyze this data and answer the query\n');
       } else {
         console.log('⚠️  NO FAMILY CONTEXT - needsFamilyContext =', selection.parameters?.needsFamilyContext);
         console.log('   GPT will answer WITHOUT family database access\n');
       }
       
       switch (selection.selectedTool) {
-        case 'getDPOC':
-          result = await this.familyClient.getDPOC();
+        case 'getDPOCH':
+          result = await this.familyClient.getDPOCH();
           break;
           
         case 'getEvents':
@@ -279,11 +291,11 @@ export class FamilyAgent {
       };
     }
     
-    // Handle DPOC responses (has 'dpoc' field)
-    if (data.dpoc) {
-      const date = new Date(parseInt(data.dpoc) * 1000);
+    // Handle DPOCH responses (has 'dpoch' field)
+    if (data.dpoch) {
+      const date = new Date(parseInt(data.dpoch) * 1000);
       return {
-        answer: `DPOC (Date of Oldest Person in Clan): ${date.toLocaleDateString()}\n${data.description}`,
+        answer: `DPOCH (Date of Oldest Person in Clan): ${date.toLocaleDateString()}\n${data.description}`,
         rawData: data,
         metadata: {
           toolName: toolResult.toolName

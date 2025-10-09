@@ -82,7 +82,7 @@ The UI will open at http://localhost:4200
 ### Example Queries
 
 **Family Queries:**
-- "What is DPOC?"
+- "What is DPOCH?"
 - "Show me Maya's events"
 - "When did Maya graduate?"
 
@@ -134,7 +134,7 @@ Health check endpoint
 Send a query to the agent
 ```json
 {
-  "query": "What is DPOC?",
+  "query": "What is DPOCH?",
   "hybridMode": false
 }
 ```
@@ -142,9 +142,9 @@ Send a query to the agent
 Response:
 ```json
 {
-  "query": "What is DPOC?",
-  "selectedTool": "getDPOC",
-  "reasoning": "Query asks about DPOC",
+  "query": "What is DPOCH?",
+  "selectedTool": "getDPOCH",
+  "reasoning": "Query asks about DPOCH",
   "result": { ... },
   "executionTime": 45
 }
@@ -154,7 +154,7 @@ Response:
 Get example queries
 ```json
 {
-  "family": ["What is DPOC?", ...],
+  "family": ["What is DPOCH?", ...],
   "general": ["Explain what AI is", ...],
   "hybrid": ["Tell me about Maya's achievements", ...]
 }

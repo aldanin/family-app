@@ -97,7 +97,7 @@ Chat with the agent! Type queries and see it select tools in real-time.
 
 ### Family Data (→ MCP Server)
 ```
-"What is DPOC?"
+"What is DPOCH?"
 "Show Maya's events"
 "When did Maya get married?"
 ```
@@ -122,7 +122,7 @@ The `ToolSelector` (in `toolSelector.ts`) is the "brain":
 
 1. **Analyzes the query** - Looks for keywords, patterns
 2. **Scores confidence** - How sure is it about the choice?
-3. **Selects a tool** - getDPOC, getEvents, or OpenAI
+3. **Selects a tool** - getDPOCH, getEvents, or OpenAI
 4. **Logs reasoning** - Shows WHY (educational!)
 
 ### Decision Process Example
@@ -132,7 +132,7 @@ Query: "Tell me about Maya's achievements"
 
 🤖 [Agent Decision Process] Analyzing query...
 📝 Query: "Tell me about Maya's achievements"
-🔍 Available tools: getDPOC, getEvents, answerGeneralQuery
+🔍 Available tools: getDPOCH, getEvents, answerGeneralQuery
 
 ✓ Detected family-related keywords: ["Maya", "achievements"]
   → No exact family tool match

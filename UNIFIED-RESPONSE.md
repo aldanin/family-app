@@ -56,8 +56,8 @@ if (response.result?.data?.answer) {
   content = response.result.answer;
 } else if (response.result?.events) {
   // Format events...
-} else if (response.result?.dpoc) {
-  // Format DPOC...
+} else if (response.result?.dpoch) {
+  // Format DPOCH...
 } else {
   // Fallback...
 }
@@ -131,12 +131,12 @@ const content = response.result.answer;
 
 ---
 
-### 3. DPOC Response
+### 3. DPOCH Response
 
 **Raw MCP data:**
 ```json
 {
-  "dpoc": "-255139200",
+  "dpoch": "-255139200",
   "description": "Date of oldest person in clan (EPOCH format)"
 }
 ```
@@ -144,10 +144,10 @@ const content = response.result.answer;
 **Normalized to:**
 ```json
 {
-  "answer": "DPOC (Date of Oldest Person in Clan): 11/30/1961\nDate of oldest person in clan (EPOCH format)",
+  "answer": "DPOCH (Date of Oldest Person in Clan): 11/30/1961\nDate of oldest person in clan (EPOCH format)",
   "rawData": { ... },
   "metadata": {
-    "toolName": "FamilyMCP-getDPOC"
+    "toolName": "FamilyMCP-getDPOCH"
   }
 }
 ```
@@ -250,7 +250,7 @@ The agent's `normalizeResult()` method handles different tool outputs:
 | Tool Output | How It's Normalized |
 |-------------|-------------------|
 | `{answer: "..."}` | Direct answer from OpenAI or fallback |
-| `{dpoc: "...", description: "..."}` | Formatted date + description |
+| `{dpoch: "...", description: "..."}` | Formatted date + description |
 | `{events: [...], count: N, name: "..."}` | Formatted event list |
 | `{calculation: "2 + 2 = 4"}` | Math result |
 | Any other data | JSON.stringify() as fallback |

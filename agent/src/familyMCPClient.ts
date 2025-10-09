@@ -90,10 +90,10 @@ export class FamilyMCPClient {
   /**
    * Get the Date Point of Commencement (oldest birthdate)
    */
-  async getDPOC(): Promise<ToolResult> {
+  async getDPOCH(): Promise<ToolResult> {
     try {
-      console.log('🔧 [Tool: getDPOC] Calling family MCP server...');
-      
+      console.log('🔧 [Tool: getDPOCH] Calling family MCP server...');
+
       // Ensure connected
       await this.connect();
       
@@ -103,40 +103,40 @@ export class FamilyMCPClient {
 
       // Call the tool
       const result = await this.client.callTool({
-        name: 'getDPOC',
+        name: 'getDPOCH',
         arguments: {}
       });
 
       // Parse response
       const resultData = result as any;
       const content = resultData.content?.[0];
-      let dpocValue: string;
-      
+      let dpochValue: string;
+
       if (content?.type === 'text') {
         // Try to parse JSON response
         try {
           const parsed = JSON.parse(content.text);
-          dpocValue = parsed.dpoc || parsed;
+          dpochValue = parsed.dpoch || parsed;
         } catch {
-          dpocValue = content.text;
+          dpochValue = content.text;
         }
       } else {
-        dpocValue = String(content);
+        dpochValue = String(content);
       }
 
       return {
-        toolName: 'getDPOC',
+        toolName: 'getDPOCH',
         success: true,
         data: {
-          dpoc: dpocValue,
+          dpoch: dpochValue,
           description: 'EPOCH timestamp of the oldest birthdate in the members table'
         },
-        reasoning: 'Retrieved the family timeline reference point (DPOC) from MCP server'
+        reasoning: 'Retrieved the family timeline reference point (DPOCH) from MCP server'
       };
     } catch (error) {
-      console.error('❌ Error calling getDPOC:', error);
+      console.error('❌ Error calling getDPOCH:', error);
       return {
-        toolName: 'getDPOC',
+        toolName: 'getDPOCH',
         success: false,
         data: {
           answer: `❌ Error connecting to family MCP server: ${error instanceof Error ? error.message : 'Unknown error'}\n\nMake sure the family-mcp-server is running on ${this.baseUrl}`
@@ -194,7 +194,7 @@ export class FamilyMCPClient {
           toolName: 'getEvents',
           success: false,
           data: {
-            answer: `Sorry, I don't have any events for "${name}" in the family database.\n\nTry asking "What is DPOC?" or check if the name is spelled correctly.`
+            answer: `Sorry, I don't have any events for "${name}" in the family database.\n\nTry asking "What is DPOCH?" or check if the name is spelled correctly.`
           },
           error: `No events found for ${name}`,
           reasoning: `Family member ${name} has no events or was not found`
@@ -344,7 +344,7 @@ export class FamilyMCPClient {
   getAvailableTools() {
     return [
       {
-        name: 'getDPOC',
+        name: 'getDPOCH',
         description: 'Get the Date Point of Commencement (oldest family member birthdate)',
         category: 'family' as const,
         parameters: {}

@@ -41,7 +41,7 @@ npm start
 
 #### 1. Family Queries → MCP Server
 ```
-"What is DPOC?"
+"What is DPOCH?"
 "Show Maya's events"
 ```
 - Uses family-mcp-server tools
@@ -94,7 +94,7 @@ const agent = new FamilyAgent(
 );
 
 // Regular query
-const response1 = await agent.processQuery("What is DPOC?");
+const response1 = await agent.processQuery("What is DPOCH?");
 
 // Hybrid query (combines MCP + GPT)
 const response2 = await agent.processQuery(

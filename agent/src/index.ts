@@ -46,7 +46,7 @@ async function main() {
   // Demonstration queries showing different tool selections
   const demoQueries = [
     // Family queries - use MCP server
-    "What is DPOC?",
+    "What is DPOCH?",
     "Show me Maya's events",
     
     // General queries - use OpenAI

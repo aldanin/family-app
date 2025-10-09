@@ -37,7 +37,7 @@
 │  Family MCP     │  │  General         │  │  HYBRID MODE!              │
 │  Client         │  │  Knowledge       │  │                            │
 │                 │  │  Tool            │  │  1. Fetch from MCP         │
-│  getDPOC()      │  │                  │  │  2. Pass to OpenAI         │
+│  getDPOCH()      │  │                  │  │  2. Pass to OpenAI         │
 │  getEvents()    │  │  askGPT()        │  │  3. Combine results        │
 │                 │  │                  │  │                            │
 │  📊 Mock data   │  │  🤖 OpenAI API   │  │  📊 + 🤖 = 🌟             │
@@ -66,9 +66,9 @@
 TOOL SELECTION FLOW
 ═══════════════════
 
-Query: "What is DPOC?"
-  └─> Keywords: ["dpoc"]
-      └─> Tool: getDPOC
+Query: "What is DPOCH?"
+  └─> Keywords: ["dpoch"]
+      └─> Tool: getDPOCH
           └─> Source: Family MCP Server
               └─> Result: Date Point of Commencement
 
@@ -188,7 +188,7 @@ KEY COMPONENTS
 
 📊 familyMCPClient.ts
    Connects to family-mcp-server
-   - getDPOC()
+   - getDPOCH()
    - getEvents(name)
 
 🤖 generalKnowledgeTool.ts
@@ -234,10 +234,10 @@ EXAMPLE SESSION
 
 $ npm run interactive
 
-You: What is DPOC?
-🤖 Agent: DPOC (Date Point of Commencement) is -255139200 
+You: What is DPOCH?
+🤖 Agent: DPOCH (Date Point of Commencement) is -255139200 
          (Jan 1, 1962) - the oldest family member birthdate.
-         [Tool: getDPOC | Time: 15ms]
+         [Tool: getDPOCH | Time: 15ms]
 
 You: hybrid
 🔀 Hybrid mode: ON

@@ -54,30 +54,46 @@ export class ToolSelector {
 Available tools:
 ${this.availableTools.map(t => `- ${t.name}: ${t.description}`).join('\n')}
 
-CRITICAL RULES:
-1. ANY query about specific people (Roy, Maya, Alon, Amit, etc.) → MUST use needsFamilyContext=true
-2. ANY query about birthdates, ages, events, family members → MUST use needsFamilyContext=true
-3. The family database contains: names, birthdates, events, relationships
-4. Examples that NEED family context:
-   - "When was Roy born?" → needsFamilyContext: true
-   - "How old is Maya?" → needsFamilyContext: true
-   - "Show me Alon's events" → needsFamilyContext: true
-   - "Who is in the family?" → needsFamilyContext: true
-   
-5. Examples that DON'T need family context:
-   - "What is AI?" → needsFamilyContext: false
-   - "Explain quantum physics" → needsFamilyContext: false
-   - "What's 2+2?" → needsFamilyContext: false
+FAMILY DATABASE KNOWLEDGE:
+- DPOCH = "Date Point Of Commencement" = the birthdate of the oldest family member (epoch timestamp)
+- The database has two types of data:
+  1. MEMBER DATA: names, birthdates, roles, relationships (father, mother, spouse), occupations
+  2. EVENT DATA: graduations, weddings, achievements, timeline events
 
-Always use "answerGeneralQuery" as the tool.
-Respond in JSON format: {"tool": "answerGeneralQuery", "reasoning": "why", "needsFamilyContext": true/false}`
+YOUR JOB: Decide what data to fetch for the query.
+
+CRITICAL RULES:
+1. If query asks about PEOPLE, AGES, BIRTHDATES, RELATIONSHIPS → fetchMembers: true
+2. If query asks about EVENTS, GRADUATIONS, WEDDINGS, ACHIEVEMENTS, DEGREES, TIMELINE → fetchEvents: true
+3. If query asks about DPOCH → use tool "getDPOCH" (not answerGeneralQuery)
+4. Many queries need BOTH! Examples:
+   - "Does Maya have a degree?" → fetchMembers: true, fetchEvents: true (degree is in events)
+   - "How old is Maya?" → fetchMembers: true, fetchEvents: false (age from birthdate)
+   - "When did Roy graduate?" → fetchMembers: true, fetchEvents: true (both needed)
+   - "Tell me about Alon" → fetchMembers: true, fetchEvents: true (complete profile)
+   - "What is DPOCH?" → tool: "getDPOCH", fetchMembers: false, fetchEvents: false
+
+5. For general knowledge (not family) → fetchMembers: false, fetchEvents: false
+
+IMPORTANT: 
+- For DPOCH queries, use tool "getDPOCH" instead of "answerGeneralQuery"
+- For all other queries, use "answerGeneralQuery"
+
+Respond in JSON format: 
+{
+  "tool": "getDPOCH" or "answerGeneralQuery", 
+  "reasoning": "why", 
+  "needsFamilyContext": true/false,
+  "fetchMembers": true/false,
+  "fetchEvents": true/false
+}`
           },
           {
             role: 'user',
             content: query
           }
         ],
-        temperature: 0.1,  // Lower temperature for more consistent decisions
+        temperature: 0.1,
         response_format: { type: 'json_object' }
       });
 
@@ -86,7 +102,9 @@ Respond in JSON format: {"tool": "answerGeneralQuery", "reasoning": "why", "need
       console.log('✓ LLM-based tool selection:');
       console.log(`  → Tool: ${selection.tool}`);
       console.log(`  → Reasoning: ${selection.reasoning}`);
-      console.log(`  → Family Context: ${selection.needsFamilyContext ? 'Yes' : 'No'}\n`);
+      console.log(`  → Family Context: ${selection.needsFamilyContext ? 'Yes' : 'No'}`);
+      console.log(`  → Fetch Members: ${selection.fetchMembers ? 'Yes' : 'No'}`);
+      console.log(`  → Fetch Events: ${selection.fetchEvents ? 'Yes' : 'No'}\n`);
       
       return {
         selectedTool: selection.tool || 'answerGeneralQuery',
@@ -94,7 +112,9 @@ Respond in JSON format: {"tool": "answerGeneralQuery", "reasoning": "why", "need
         confidence: 0.95,
         parameters: { 
           query, 
-          needsFamilyContext: selection.needsFamilyContext || false 
+          needsFamilyContext: selection.needsFamilyContext || false,
+          fetchMembers: selection.fetchMembers || false,
+          fetchEvents: selection.fetchEvents || false
         }
       };
       

@@ -200,7 +200,7 @@ curl http://localhost:3001/api/health
 ```cmd
 curl -X POST http://localhost:3001/api/query ^
   -H "Content-Type: application/json" ^
-  -d "{\"query\":\"What is DPOC?\",\"hybridMode\":false}"
+  -d "{\"query\":\"What is DPOCH?\",\"hybridMode\":false}"
 ```
 
 ### 2. Test Frontend
@@ -355,7 +355,7 @@ Opening http://localhost:4200...
 # Chat Interface Opens!
 [Welcome screen with example queries]
 
-# Type: "What is DPOC?"
+# Type: "What is DPOCH?"
 # Response appears in chat!
 ```
 
@@ -424,7 +424,7 @@ After running everything:
 Your ChatGPT-style AI agent interface is now running!
 
 **Try these queries:**
-- "What is DPOC?"
+- "What is DPOCH?"
 - "Show me Maya's events"
 - Toggle hybrid mode 🔗 and ask: "Tell me about Maya's achievements"
 

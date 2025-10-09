@@ -377,7 +377,7 @@ export class AppComponent {
   isLoading = false;
 
   exampleQueries = [
-    "What is DPOC?",
+    "What is DPOCH?",
     "Show me Maya's events",
     "Tell me about Maya's achievements",
     "Explain what AI is"

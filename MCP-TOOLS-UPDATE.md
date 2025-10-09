@@ -40,16 +40,16 @@ Found 11 family member(s):
 
 Your agent now has access to **3 MCP tools** from the family server:
 
-### 1. `getDPOC`
+### 1. `getDPOCH`
 **Description**: Get the Date Point of Commencement (oldest family member birthdate)
 
 **Usage**:
-- "What is DPOC?"
+- "What is DPOCH?"
 - "When is the oldest birthdate?"
 
 **Example Response**:
 ```
-DPOC (Date of Oldest Person in Clan): 11/30/1961
+DPOCH (Date of Oldest Person in Clan): 11/30/1961
 EPOCH timestamp of the oldest birthdate in the members table
 ```
 
@@ -102,7 +102,7 @@ The agent's "brain" (tool selector) has been enhanced to recognize:
 - All family member names: Agam, Alon, Amit, Jozi, Liad, Maya, Nofar, Roy, Shaked, Tova, Yuval
 
 ### Selection Priority
-1. **DPOC queries** → `getDPOC` (confidence: 95%)
+1. **DPOCH queries** → `getDPOCH` (confidence: 95%)
 2. **Family list queries** → `getFamily` (confidence: 90%)
 3. **Person-specific queries** → `getEvents` (confidence: 90%)
 4. **Generic family queries** → `getFamily` (default, confidence: 60%)
@@ -160,12 +160,12 @@ Try these queries in your ChatGPT-style UI:
 - "Show me everyone in the family"
 
 ### Person-Specific Queries
-- "Show me Roy's events" (now works! Previously returned DPOC)
+- "Show me Roy's events" (now works! Previously returned DPOCH)
 - "What are Amit's events?"
 - "When did Liad graduate?"
 
-### DPOC Queries
-- "What is DPOC?"
+### DPOCH Queries
+- "What is DPOCH?"
 - "Who is the oldest family member?"
 
 ### Hybrid Mode Queries (with OpenAI)
@@ -194,7 +194,7 @@ Toggle hybrid mode 🔗 ON, then ask:
    - ✅ Added detection for family list queries
    - ✅ Updated keywords: `list`, `who`, `members`, `how many`
    - ✅ Updated all 11 family member names
-   - ✅ Changed default family query from `getDPOC` to `getFamily`
+   - ✅ Changed default family query from `getDPOCH` to `getFamily`
 
 4. **`agent/src/types.ts`**
    - ✅ Added `memberCount` to metadata interface

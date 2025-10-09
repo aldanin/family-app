@@ -6,7 +6,7 @@ An educational TypeScript AI agent that demonstrates **intelligent tool selectio
 
 This agent shows how AI agents decide which tool to use and combine multiple data sources:
 
-1. **Family Queries** → Uses family-mcp-server tools (getDPOC, getEvents)
+1. **Family Queries** → Uses family-mcp-server tools (getDPOCH, getEvents)
 2. **General Queries** → Uses OpenAI GPT for intelligent responses
 3. **Hybrid Queries** → Combines family data WITH GPT analysis! 🌟
 4. **Decision Logging** → Shows WHY each tool was selected
@@ -93,7 +93,7 @@ This will run several example queries and show you how the agent selects tools!
 
 ### Family Queries (→ family-mcp-server)
 
-- "What is DPOC?" → `getDPOC` tool
+- "What is DPOCH?" → `getDPOCH` tool
 - "Show me Maya's events" → `getEvents` tool
 - "When did Maya graduate?" → `getEvents` tool
 
@@ -125,7 +125,7 @@ The agent logs its decision-making process:
 ```
 🤖 [Agent Decision Process] Analyzing query...
 📝 Query: "Show me Maya's events"
-🔍 Available tools: getDPOC, getEvents, answerGeneralQuery
+🔍 Available tools: getDPOCH, getEvents, answerGeneralQuery
 
 ✓ Detected family-related keywords
   → Detected person name: "Maya"
@@ -156,7 +156,7 @@ Result: GPT analyzes Maya's actual events and provides
 
 ### Selection Logic
 
-1. **Keyword Detection** - Looks for family terms (names, events, dpoc)
+1. **Keyword Detection** - Looks for family terms (names, events, dpoch)
 2. **Pattern Matching** - Matches general patterns (math, time, definitions)
 3. **Confidence Scoring** - Assigns confidence to each decision
 4. **Fallback** - Uses general handler when uncertain
@@ -200,7 +200,7 @@ agent/
 Currently, the family MCP client uses mock data. To connect to a real server:
 
 1. Implement MCP protocol HTTP calls in `familyMCPClient.ts`
-2. Update the `getDPOC()` and `getEvents()` methods
+2. Update the `getDPOCH()` and `getEvents()` methods
 3. Point `MCP_SERVER_URL` to your running server
 
 ### Add Interactive Mode
@@ -252,7 +252,7 @@ By studying this code, you'll learn:
 This agent is designed to work with your existing family-mcp-server:
 
 - **Endpoint**: `http://localhost:6402/sse`
-- **Tools Used**: `getDPOC`, `getEvents`
+- **Tools Used**: `getDPOCH`, `getEvents`
 
 Make sure your family-mcp-server is running before starting the agent!
 

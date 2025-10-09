@@ -138,7 +138,7 @@ or general questions.
 
 Try these examples:
 ┌────────────────────────────────────┐
-│ What is DPOC?                      │
+│ What is DPOCH?                      │
 └────────────────────────────────────┘
 ┌────────────────────────────────────┐
 │ Show me Maya's events              │
@@ -150,16 +150,16 @@ Try these examples:
 ```
 ┌────────────────────────────────────┐
 │ 👤 You          10:30 AM           │
-│ What is DPOC?                      │
+│ What is DPOCH?                      │
 └────────────────────────────────────┘
 
 ┌────────────────────────────────────┐
 │ 🤖 Agent        10:30 AM           │
-│ DPOC: January 1, 1962              │
+│ DPOCH: January 1, 1962              │
 │ EPOCH timestamp of the oldest      │
 │ birthdate in the members table     │
 │                                    │
-│ Tool: getDPOC | 45ms              │
+│ Tool: getDPOCH | 45ms              │
 └────────────────────────────────────┘
 ```
 

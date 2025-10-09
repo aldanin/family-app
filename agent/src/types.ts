@@ -73,7 +73,7 @@ export interface FamilyEventsResponse {
   count: number;
 }
 
-export interface DPOCResponse {
-  dpoc: string;
+export interface DPOCHResponse {
+  dpoch: string;
   description: string;
 }

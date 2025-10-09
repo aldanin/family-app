@@ -31,7 +31,7 @@ async function runInteractive() {
   });
 
   console.log('Type your queries below. Examples:');
-  console.log('  • "What is DPOC?"');
+  console.log('  • "What is DPOCH?"');
   console.log('  • "Show Maya\'s events"');
   console.log('  • "Explain artificial intelligence"');
   console.log('  • "Tell me about Maya\'s achievements" (hybrid!)');

@@ -87,7 +87,7 @@ app.post('/api/query', async (req: Request, res: Response) => {
 app.get('/api/examples', (req: Request, res: Response) => {
   res.json({
     family: [
-      "What is DPOC?",
+      "What is DPOCH?",
       "Show me Maya's events",
       "When did Maya graduate?"
     ],

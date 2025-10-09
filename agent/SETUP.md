@@ -93,8 +93,8 @@ npm run interactive
 Now you can chat with the agent:
 
 ```
-You: What is DPOC?
-🤖 Agent: [Shows DPOC information from family database]
+You: What is DPOCH?
+🤖 Agent: [Shows DPOCH information from family database]
 
 You: Explain what AI agents are
 🤖 Agent: [GPT response explaining AI agents]
