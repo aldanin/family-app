@@ -1,0 +1,80 @@
+<div class="chat-container">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-content">
+      <h1>🤖 Family AI Agent</h1>
+      <p class="subtitle">Powered by OpenAI + MCP Server</p>
+    </div>
+    <div class="controls">
+      <label class="hybrid-toggle">
+        <input type="checkbox" [(ngModel)]="hybridMode">
+        <span>🔗 Hybrid Mode</span>
+      </label>
+      <button class="clear-btn" (click)="clearChat()">🗑️ Clear</button>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div class="messages" #messagesContainer>
+    <div *ngIf="messages.length === 0" class="empty-state">
+      <h2>👋 Welcome!</h2>
+      <p>Ask me anything about your family or general questions.</p>
+      <div class="examples">
+        <h3>Try these examples:</h3>
+        <button *ngFor="let example of exampleQueries" 
+                class="example-btn"
+                (click)="sendMessage(example)">
+          {{ example }}
+        </button>
+      </div>
+    </div>
+
+    <div *ngFor="let message of messages" 
+         class="message"
+         [class.user-message]="message.role === 'user'"
+         [class.assistant-message]="message.role === 'assistant'">
+      <div class="message-header">
+        <span class="role">{{ message.role === 'user' ? '👤 You' : '🤖 Agent' }}</span>
+        <span class="timestamp">{{ message.timestamp | date:'short' }}</span>
+      </div>
+      <div class="message-content">{{ message.content }}</div>
+      <div *ngIf="message.toolUsed" class="message-footer">
+        <span class="tool">Tool: {{ message.toolUsed }}</span>
+        <span class="time">{{ message.executionTime }}ms</span>
+      </div>
+    </div>
+
+    <div *ngIf="isLoading" class="message assistant-message loading">
+      <div class="message-header">
+        <span class="role">🤖 Agent</span>
+      </div>
+      <div class="message-content">
+        <div class="typing-indicator">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Input -->
+  <div class="input-container">
+    <div class="input-wrapper">
+      <input 
+        type="text" 
+        [(ngModel)]="userInput"
+        (keyup.enter)="sendMessage()"
+        [disabled]="isLoading"
+        placeholder="Type your message here..."
+        class="message-input">
+      <button 
+        (click)="sendMessage()"
+        [disabled]="!userInput.trim() || isLoading"
+        class="send-btn">
+        {{ isLoading ? '⏳' : '▶️' }} Send
+      </button>
+    </div>
+    <div class="input-hint" *ngIf="hybridMode">
+      🔗 Hybrid mode is ON - Agent will combine family data with AI analysis
+    </div>
+  </div>
+</div>

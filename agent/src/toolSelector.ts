@@ -54,34 +54,34 @@ export class ToolSelector {
 Available tools:
 ${this.availableTools.map(t => `- ${t.name}: ${t.description}`).join('\n')}
 
-FAMILY DATABASE KNOWLEDGE:
-- DPOCH = "Date Point Of Commencement" = the birthdate of the oldest family member (epoch timestamp)
-- The database has two types of data:
-  1. MEMBER DATA: names, birthdates, roles, relationships (father, mother, spouse), occupations
-  2. EVENT DATA: graduations, weddings, achievements, timeline events
+FAMILY DATABASE STRUCTURE:
+1. MEMBER DATA: names, birthdates, roles, relationships (father, mother, spouse), occupations
+2. EVENT DATA: graduations, weddings, achievements, timeline events
+3. DPOCH (Date Point Of Commencement): The oldest birthdate in the family database (special query)
 
-YOUR JOB: Decide what data to fetch for the query.
+YOUR JOB: Decide which tool and what data to fetch for the query.
 
-CRITICAL RULES:
-1. If query asks about PEOPLE, AGES, BIRTHDATES, RELATIONSHIPS → fetchMembers: true
+TOOL SELECTION RULES:
+- Most queries → "answerGeneralQuery" (default)
+- "What is DPOCH?" or "Tell me about DPOCH" → "getDPOCH" tool
+- General knowledge (not family) → "answerGeneralQuery" without context
+
+DATA FETCHING RULES:
+1. If query asks about PEOPLE, AGES, BIRTHDATES, RELATIONSHIPS, OCCUPATIONS → fetchMembers: true
 2. If query asks about EVENTS, GRADUATIONS, WEDDINGS, ACHIEVEMENTS, DEGREES, TIMELINE → fetchEvents: true
-3. If query asks about DPOCH → use tool "getDPOCH" (not answerGeneralQuery)
-4. Many queries need BOTH! Examples:
+3. Many queries need BOTH! Examples:
    - "Does Maya have a degree?" → fetchMembers: true, fetchEvents: true (degree is in events)
    - "How old is Maya?" → fetchMembers: true, fetchEvents: false (age from birthdate)
    - "When did Roy graduate?" → fetchMembers: true, fetchEvents: true (both needed)
    - "Tell me about Alon" → fetchMembers: true, fetchEvents: true (complete profile)
-   - "What is DPOCH?" → tool: "getDPOCH", fetchMembers: false, fetchEvents: false
+   - "What is DPOCH?" → Use "getDPOCH" tool, fetchMembers: false, fetchEvents: false
+   - "Do you know what DPOCH is?" → Use "getDPOCH" tool, explain it's the oldest birthdate
 
-5. For general knowledge (not family) → fetchMembers: false, fetchEvents: false
-
-IMPORTANT: 
-- For DPOCH queries, use tool "getDPOCH" instead of "answerGeneralQuery"
-- For all other queries, use "answerGeneralQuery"
+4. For general knowledge (not family) → fetchMembers: false, fetchEvents: false
 
 Respond in JSON format: 
 {
-  "tool": "getDPOCH" or "answerGeneralQuery", 
+  "tool": "answerGeneralQuery" | "getDPOCH", 
   "reasoning": "why", 
   "needsFamilyContext": true/false,
   "fetchMembers": true/false,

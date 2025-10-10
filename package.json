@@ -1,0 +1,23 @@
+{
+  "name": "family-app",
+  "version": "1.0.0",
+  "description": "Family AI Agent with MCP Server Integration",
+  "scripts": {
+    "start": "npm run build && npm run start:all",
+    "build": "npm run build:agent && npm run build:api",
+    "build:agent": "cd agent && yarn build",
+    "build:api": "cd agent-api && yarn build",
+    "start:all": "start \"Agent API\" cmd /k \"cd agent-api && yarn start\" && timeout /t 3 && start \"Family UI\" cmd /k \"cd family-agent-ui && yarn start\"",
+    "start:api": "cd agent-api && yarn start",
+    "start:ui": "cd family-agent-ui && yarn start",
+    "stop": "taskkill /F /IM node.exe /T 2>nul || echo No Node.js processes found"
+  },
+  "keywords": [
+    "family",
+    "mcp",
+    "ai-agent",
+    "openai"
+  ],
+  "author": "",
+  "license": "ISC"
+}
