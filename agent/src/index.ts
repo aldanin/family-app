@@ -37,7 +37,7 @@ async function main() {
   });
   
   console.log('\nGeneral Tools (OpenAI Powered):');
-  capabilities.generalTools.forEach(tool => {
+  capabilities.answerGenerator.forEach(tool => {
     console.log(`  • ${tool.name}: ${tool.description}`);
   });
   

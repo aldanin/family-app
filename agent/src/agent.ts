@@ -4,23 +4,23 @@
  */
 
 import { FamilyMCPClient } from './familyMCPClient';
-import { GeneralKnowledgeTool } from './generalKnowledgeTool';
+import { AnswerGenerator } from './answerGenerator';
 import { ToolSelector, ToolSelectionResult } from './toolSelector';
 import { AgentQuery, AgentResponse, ToolDefinition, UnifiedResult, ToolResult } from './types';
 
 export class FamilyAgent {
   private familyClient: FamilyMCPClient;
-  private generalTool: GeneralKnowledgeTool;
+  private answerGenerator: AnswerGenerator;
   private toolSelector: ToolSelector;
 
   constructor(mcpServerUrl?: string, openaiApiKey?: string, openaiModel?: string) {
     this.familyClient = new FamilyMCPClient(mcpServerUrl);
-    this.generalTool = new GeneralKnowledgeTool(openaiApiKey, openaiModel);
+    this.answerGenerator = new AnswerGenerator(openaiApiKey, openaiModel);
     
     // Gather all available tools
     const allTools: ToolDefinition[] = [
       ...this.familyClient.getAvailableTools(),
-      ...this.generalTool.getAvailableTools()
+      ...this.answerGenerator.getAvailableTools()
     ];
     
     // Pass OpenAI key to tool selector for LLM-based selection!
@@ -260,7 +260,7 @@ export class FamilyAgent {
         return this.familyClient.getFamily(selection.parameters?.name);
 
       case 'answerGeneralQuery':
-        return this.generalTool.answerGeneralQuery(query, familyContext);
+        return this.answerGenerator.answerGeneralQuery(query, familyContext);
 
       default:
         throw new Error(`Unknown tool: ${selection.selectedTool}`);
@@ -410,7 +410,7 @@ export class FamilyAgent {
   getCapabilities() {
     return {
       familyTools: this.familyClient.getAvailableTools(),
-      generalTools: this.generalTool.getAvailableTools(),
+      answerGenerator: this.answerGenerator.getAvailableTools(),
       selectionStrategy: this.toolSelector.getSelectionStrategy()
     };
   }

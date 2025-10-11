@@ -1,13 +1,13 @@
 /**
- * General Knowledge Tool
- * Uses OpenAI's GPT API to answer general questions
- * This allows the agent to combine GPT intelligence with MCP server tools
+ * Answer Generator
+ * Uses OpenAI's GPT to generate natural language answers
+ * Combines GPT intelligence with optional family data context from MCP server
  */
 
 import OpenAI from 'openai';
 import { ToolResult } from './types';
 
-export class GeneralKnowledgeTool {
+export class AnswerGenerator {
   private openai: OpenAI | null = null;
   private model: string;
 
@@ -26,7 +26,7 @@ export class GeneralKnowledgeTool {
    * Answer general questions using OpenAI GPT
    */
   async answerGeneralQuery(query: string, context?: any): Promise<ToolResult> {
-    console.log(`🔧 [Tool: GeneralKnowledge/OpenAI] Processing query: "${query}"`);
+    console.log(`🔧 [Tool: AnswerGenerator/OpenAI] Processing query: "${query}"`);
 
     try {
       // If OpenAI is available, use it
@@ -39,7 +39,7 @@ export class GeneralKnowledgeTool {
       
     } catch (error) {
       return {
-        toolName: 'GeneralKnowledge',
+        toolName: 'AnswerGenerator',
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
         reasoning: 'Failed to process general query'
@@ -69,11 +69,13 @@ CRITICAL INSTRUCTIONS:
 - DO NOT make up family information - ONLY use what's provided in the database
 - For questions about the world (history, events, science) - use your training data freely
 - Calculate ages based on today's date (${new Date().toISOString().split('T')[0]})
+- When the user asks who can help with a need ("who should I call", "who can help me with"), scan the family data and recommend the best matching person based on occupations, skills, or notes. Name them explicitly and explain why they fit.
 
 Examples:
 - "Amit was born on February 26, 1994" (using exact date from database when provided)
 - "Maya is 26 years old" (calculated from birthdate: 1998-12-08 when provided)
 - "In 2019, major world events included..." (using general knowledge when no specific family context)
+- "If I have a stutter, contact Maya who is a communication therapist" (matching occupation from family data)
 
 Keep answers concise, friendly, and ACCURATE.`
         }
@@ -168,7 +170,7 @@ ${eventsList}`;
       console.log(`   📝 GPT Answer: "${answer.substring(0, 200)}${answer.length > 200 ? '...' : ''}"`);
 
       return {
-        toolName: 'GeneralKnowledge-OpenAI',
+        toolName: 'AnswerGenerator-OpenAI',
         success: true,
         data: {
           answer,
@@ -213,7 +215,7 @@ ${eventsList}`;
     
     // Default response
     return {
-      toolName: 'GeneralKnowledge-Fallback',
+      toolName: 'AnswerGenerator-Fallback',
       success: true,
       data: {
         answer: `I understand you're asking: "${query}". To get intelligent AI responses, please configure your OpenAI API key in the .env file.`,
@@ -241,7 +243,7 @@ ${eventsList}`;
         }
         
         return {
-          toolName: 'GeneralKnowledge-Math',
+          toolName: 'AnswerGenerator-Math',
           success: true,
           data: { calculation: `${num1} ${op} ${num2} = ${result}`, result },
           reasoning: 'Performed mathematical calculation'
@@ -252,7 +254,7 @@ ${eventsList}`;
     }
     
     return {
-      toolName: 'GeneralKnowledge-Math',
+      toolName: 'AnswerGenerator-Math',
       success: true,
       data: { answer: 'I can help with simple math queries like "what is 2 + 2"' },
       reasoning: 'Math query format not recognized'
@@ -276,7 +278,7 @@ ${eventsList}`;
     }
     
     return {
-      toolName: 'GeneralKnowledge-DateTime',
+      toolName: 'AnswerGenerator-DateTime',
       success: true,
       data: { answer, timestamp: now.toISOString() },
       reasoning: 'Provided current date/time information'

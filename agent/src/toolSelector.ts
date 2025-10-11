@@ -105,13 +105,14 @@ export class ToolSelector {
       2. Use "getDPOCH" ONLY if the user explicitly asks for DPOCH / oldest birthdate.
       3. NEVER return raw data tools (getFamily/getEvents) directly for conversational answers.
 
-      FLAG RULES:
-      - fetchMembers = true when the question needs MEMBER info (names, birthdates, ages, relationships, "who is" someone, etc.).
-      - fetchEvents = true when the question needs FAMILY event history (graduations, weddings, achievements, timeline). For "family events" or "events for <person>", set this flag.
-      - World/general history questions do NOT require fetchEvents; the model already knows world events.
-      - If a question mixes world + family events, set fetchEvents = true so the agent retrieves family events, and let the model add world events itself.
-      - When a specific family member is referenced, set fetchMembers = true (needed for context even if the final answer discusses world topics).
-      - needsFamilyContext MUST be true whenever fetchMembers or fetchEvents is true; otherwise false.
+  FLAG RULES:
+  - fetchMembers = true when the question needs MEMBER info (names, birthdates, ages, relationships, "who is" someone, etc.).
+  - Also set fetchMembers = true for help/expertise questions ("who should I call", "who can help with", "who would you recommend") even if the word "family" is missing—assume the user wants a family member.
+  - fetchEvents = true when the question needs FAMILY event history (graduations, weddings, achievements, timeline). For "family events" or "events for <person>", set this flag.
+  - World/general history questions do NOT require fetchEvents; the model already knows world events.
+  - If a question mixes world + family events, set fetchEvents = true so the agent retrieves family events, and let the model add world events itself.
+  - When a specific family member is referenced, set fetchMembers = true (needed for context even if the final answer discusses world topics).
+  - needsFamilyContext MUST be true whenever fetchMembers or fetchEvents is true; otherwise false.
 
       STEP-BY-STEP THINKING:
       1. Identify if the query is about family members, family events, world/general knowledge, or DPOCH.
@@ -120,12 +121,13 @@ export class ToolSelector {
       4. Set needsFamilyContext accordingly (true iff any dataset is fetched).
       5. Reply with the JSON object only.
 
-      EXAMPLES:
-      - "What family events do we have?" → answerGeneralQuery, fetchMembers false, fetchEvents true, needsFamilyContext true.
-      - "Tell me about world events in 2019." → answerGeneralQuery, all fetch flags false, needsFamilyContext false.
-      - "What world events happened when Roy was born?" → answerGeneralQuery, fetchMembers true (to know Roy's birth year), fetchEvents false, needsFamilyContext true.
-      - "List the family and world events in 2019." → answerGeneralQuery, fetchMembers false, fetchEvents true, needsFamilyContext true.
-      - "What is DPOCH?" → getDPOCH, all fetch flags false, needsFamilyContext false.
+  EXAMPLES:
+  - "What family events do we have?" → answerGeneralQuery, fetchMembers false, fetchEvents true, needsFamilyContext true.
+  - "Tell me about world events in 2019." → answerGeneralQuery, all fetch flags false, needsFamilyContext false.
+  - "What world events happened when Roy was born?" → answerGeneralQuery, fetchMembers true (to know Roy's birth year), fetchEvents false, needsFamilyContext true.
+  - "List the family and world events in 2019." → answerGeneralQuery, fetchMembers false, fetchEvents true, needsFamilyContext true.
+  - "If I have a stutter, who should I call?" → answerGeneralQuery, fetchMembers true, fetchEvents false, needsFamilyContext true.
+  - "What is DPOCH?" → getDPOCH, all fetch flags false, needsFamilyContext false.
     `;
   }
 
