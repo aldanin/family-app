@@ -43,84 +43,128 @@ export class ToolSelector {
     }
 
     try {
-      // Let GPT decide which tool to use based on tool descriptions!
+      // Build a focused system prompt (extracted for readability)
+      const systemPrompt = this.buildSystemPrompt();
+
       const response = await this.openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
-          {
-            role: 'system',
-            content: `You are a tool selection assistant for an AI agent that has access to a family database via MCP server.
-
-Available tools:
-${this.availableTools.map(t => `- ${t.name}: ${t.description}`).join('\n')}
-
-FAMILY DATABASE STRUCTURE:
-1. MEMBER DATA: names, birthdates, roles, relationships (father, mother, spouse), occupations
-2. EVENT DATA: graduations, weddings, achievements, timeline events
-3. DPOCH (Date Point Of Commencement): The oldest birthdate in the family database (special query)
-
-YOUR JOB: Decide which tool and what data to fetch for the query.
-
-TOOL SELECTION RULES:
-- Most queries → "answerGeneralQuery" (default)
-- "What is DPOCH?" or "Tell me about DPOCH" → "getDPOCH" tool
-- General knowledge (not family) → "answerGeneralQuery" without context
-
-DATA FETCHING RULES:
-1. If query asks about PEOPLE, AGES, BIRTHDATES, RELATIONSHIPS, OCCUPATIONS → fetchMembers: true
-2. If query asks about EVENTS, GRADUATIONS, WEDDINGS, ACHIEVEMENTS, DEGREES, TIMELINE → fetchEvents: true
-3. Many queries need BOTH! Examples:
-   - "Does Maya have a degree?" → fetchMembers: true, fetchEvents: true (degree is in events)
-   - "How old is Maya?" → fetchMembers: true, fetchEvents: false (age from birthdate)
-   - "When did Roy graduate?" → fetchMembers: true, fetchEvents: true (both needed)
-   - "Tell me about Alon" → fetchMembers: true, fetchEvents: true (complete profile)
-   - "What is DPOCH?" → Use "getDPOCH" tool, fetchMembers: false, fetchEvents: false
-   - "Do you know what DPOCH is?" → Use "getDPOCH" tool, explain it's the oldest birthdate
-
-4. For general knowledge (not family) → fetchMembers: false, fetchEvents: false
-
-Respond in JSON format: 
-{
-  "tool": "answerGeneralQuery" | "getDPOCH", 
-  "reasoning": "why", 
-  "needsFamilyContext": true/false,
-  "fetchMembers": true/false,
-  "fetchEvents": true/false
-}`
-          },
-          {
-            role: 'user',
-            content: query
-          }
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: query }
         ],
         temperature: 0.1,
         response_format: { type: 'json_object' }
       });
 
-      const selection = JSON.parse(response.choices[0].message.content || '{}');
-      
+      const selectionRaw = response.choices?.[0]?.message?.content || '{}';
+      const selection = this.safeParse(selectionRaw);
+
+      // Structured logging
       console.log('✓ LLM-based tool selection:');
       console.log(`  → Tool: ${selection.tool}`);
       console.log(`  → Reasoning: ${selection.reasoning}`);
       console.log(`  → Family Context: ${selection.needsFamilyContext ? 'Yes' : 'No'}`);
       console.log(`  → Fetch Members: ${selection.fetchMembers ? 'Yes' : 'No'}`);
       console.log(`  → Fetch Events: ${selection.fetchEvents ? 'Yes' : 'No'}\n`);
-      
+
       return {
         selectedTool: selection.tool || 'answerGeneralQuery',
         reasoning: selection.reasoning || 'LLM-based selection',
         confidence: 0.95,
-        parameters: { 
-          query, 
+        parameters: {
+          query,
           needsFamilyContext: selection.needsFamilyContext || false,
           fetchMembers: selection.fetchMembers || false,
           fetchEvents: selection.fetchEvents || false
         }
       };
-      
     } catch (error) {
       console.error('❌ LLM tool selection failed, using fallback:', error);
       return this.fallbackSelection(query);
+    }
+  }
+
+  private buildSystemPrompt(): string {
+    return this.dedent`
+      You are a tool selection assistant for an AI agent that has access to a family database via MCP server.
+
+      Available tools:
+      ${this.availableTools.map((t) => `- ${t.name}: ${t.description}`).join('\n')}
+
+      FAMILY DATABASE:
+      The database has two types of data:
+      - MEMBER DATA: Basic info (names, birthdates, roles, relationships, occupations)
+      - EVENT DATA: Life events (graduations, weddings, achievements, etc.)
+      - DPOCH: The oldest birthdate in the database (special query)
+
+      TOOL SELECTION:
+      - ALWAYS use "answerGeneralQuery" for natural language questions (it will fetch needed data automatically)
+      - ONLY use direct MCP tools (getDPOCH, getEvents, getFamily) if explicitly building a tool/API (rare)
+      - For user questions → "answerGeneralQuery" + specify what data to fetch (fetchMembers/fetchEvents)
+
+      YOUR JOB:
+      Analyze the query and decide what data is needed to answer it.
+
+      GUIDELINES:
+      - Questions about people, ages, relationships → need MEMBER DATA (fetchMembers: true)
+      - Questions about FAMILY events/achievements (graduations, weddings, etc.) → need EVENT DATA (fetchEvents: true)
+      - Questions about WORLD events → use GPT's general knowledge (fetchEvents: false)
+      - If the query mentions BOTH world and family events → fetchEvents: true (GPT will handle world events from its knowledge)
+      - Some questions need BOTH types of data to answer fully
+      - Questions that REFERENCE family members but ask about OTHER topics → still fetch family data as context
+      - Pure general knowledge questions (no family reference) → no data needed
+      - DPOCH queries → use the "getDPOCH" tool directly
+
+      EXAMPLES:
+      "When was Agam born?" → tool: "answerGeneralQuery", fetchMembers: true, fetchEvents: false
+      "Does Maya have a degree?" → tool: "answerGeneralQuery", fetchMembers: true, fetchEvents: true
+      "How old is Alon?" → tool: "answerGeneralQuery", fetchMembers: true, fetchEvents: false
+      "What world events happened when Roy was born?" → tool: "answerGeneralQuery", fetchMembers: true, fetchEvents: false
+      "What family events happened in 2019?" → tool: "answerGeneralQuery", fetchMembers: false, fetchEvents: true
+      "What world and family events happened in 2019?" → tool: "answerGeneralQuery", fetchMembers: false, fetchEvents: true
+      "What is AI?" → tool: "answerGeneralQuery", fetchMembers: false, fetchEvents: false
+      "What is DPOCH?" → tool: "getDPOCH"
+
+      Respond in JSON format: 
+      {
+        "tool": "answerGeneralQuery" | "getDPOCH", 
+        "reasoning": "why", 
+        "needsFamilyContext": true/false,
+        "fetchMembers": true/false,
+        "fetchEvents": true/false
+      }
+    `;
+  }
+
+  private dedent(strings: TemplateStringsArray, ...values: any[]): string {
+    // Combine strings and values
+    let full = strings.reduce((acc, s, i) => acc + s + (i < values.length ? String(values[i]) : ''), '');
+
+    // Trim leading/trailing blank lines
+    full = full.replace(/^\n+/, '').replace(/\n+$/, '');
+
+    const lines = full.split('\n');
+    // Calculate minimum indentation (ignore empty lines)
+    let minIndent: number | null = null;
+    for (const line of lines) {
+      if (/^\s*$/.test(line)) continue;
+      const match = line.match(/^\s*/);
+      const indent = match ? match[0].length : 0;
+      minIndent = minIndent === null ? indent : Math.min(minIndent, indent);
+    }
+
+    if (minIndent && minIndent > 0) {
+      return lines.map((l) => l.slice(minIndent as number)).join('\n');
+    }
+    return lines.join('\n');
+  }
+
+  private safeParse(raw: string): Record<string, any> {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      console.warn('⚠️  Failed to parse selection response, returning empty object');
+      return {};
     }
   }
 

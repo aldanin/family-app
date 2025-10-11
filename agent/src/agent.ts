@@ -5,7 +5,7 @@
 
 import { FamilyMCPClient } from './familyMCPClient';
 import { GeneralKnowledgeTool } from './generalKnowledgeTool';
-import { ToolSelector } from './toolSelector';
+import { ToolSelector, ToolSelectionResult } from './toolSelector';
 import { AgentQuery, AgentResponse, ToolDefinition, UnifiedResult, ToolResult } from './types';
 
 export class FamilyAgent {
@@ -38,106 +38,15 @@ export class FamilyAgent {
     console.log('='.repeat(80));
     
     try {
-      // Step 1: Select the appropriate tool (LLM-based selection!)
       const selection = await this.toolSelector.selectTool(query);
-      
-      console.log('📊 TOOL SELECTION RESULT:');
-      console.log(`   Selected Tool: ${selection.selectedTool}`);
-      console.log(`   Confidence: ${(selection.confidence * 100).toFixed(0)}%`);
-      console.log(`   Reasoning: ${selection.reasoning}`);
-      console.log(`   Parameters:`, JSON.stringify(selection.parameters, null, 2));
-      console.log('');
-      
-      // Step 2: Execute the selected tool
-      console.log('⚙️  EXECUTING TOOL...\n');
-      
-      let result;
-      let familyContext: { members?: any[], count?: number, events?: any } = {};
-      
-      // If this is a family query, fetch relevant family data and let GPT reason about it
-      if (selection.selectedTool === 'answerGeneralQuery' && selection.parameters?.needsFamilyContext) {
-        console.log('🔗 FETCHING FAMILY CONTEXT for GPT...');
-        console.log(`   needsFamilyContext = ${selection.parameters.needsFamilyContext}\n`);
-        
-        familyContext = {};
-        
-        // Fetch members if LLM decided it's needed
-        if (selection.parameters.fetchMembers) {
-          console.log('   → LLM requested: Fetch family members');
-          const familyResult = await this.familyClient.getFamily();
-          if (familyResult.success) {
-            familyContext.members = familyResult.data.members;
-            familyContext.count = familyResult.data.count;
-            console.log(`   ✓ Retrieved ${familyContext.count} family members`);
-            if (familyContext.members) {
-              console.log(`   ✓ Members:`, familyContext.members.map((m: any) => m.name).join(', '));
-            }
-          } else {
-            console.error('   ❌ Failed to fetch family members:', familyResult.error);
-          }
-        }
-        
-        // Fetch events if LLM decided it's needed
-        if (selection.parameters.fetchEvents) {
-          console.log('   → LLM requested: Fetch events');
-          
-          // Try to find person name in query
-          const lowerQuery = selection.parameters.query?.toLowerCase() || '';
-          let personName: string | undefined;
-          
-          // If we have members data, search for name in query
-          if (familyContext.members) {
-            personName = familyContext.members.find((m: any) => 
-              lowerQuery.includes(m.name.toLowerCase())
-            )?.name;
-          }
-          
-          if (personName) {
-            console.log(`   → Fetching events for: ${personName}`);
-            const eventsResult = await this.familyClient.getEvents(personName);
-            
-            if (eventsResult.success) {
-              familyContext.events = eventsResult.data;
-              console.log(`   ✓ Retrieved ${eventsResult.data.events?.length || 0} events for ${personName}`);
-            } else {
-              console.log(`   ⚠️  No events found for ${personName}`);
-            }
-          } else {
-            console.log(`   ⚠️  Could not identify person name in query for event lookup`);
-          }
-        }
-        
-        console.log('   ✓ GPT will analyze this data and answer the query\n');
-      } else {
-        console.log('⚠️  NO FAMILY CONTEXT - needsFamilyContext =', selection.parameters?.needsFamilyContext);
-        console.log('   GPT will answer WITHOUT family database access\n');
-      }
-      
-      switch (selection.selectedTool) {
-        case 'getDPOCH':
-          result = await this.familyClient.getDPOCH();
-          break;
-          
-        case 'getEvents':
-          const name = selection.parameters?.name;
-          if (!name) {
-            throw new Error('Missing required parameter: name');
-          }
-          result = await this.familyClient.getEvents(name, selection.parameters?.refDate);
-          break;
-          
-        case 'getFamily':
-          result = await this.familyClient.getFamily(selection.parameters?.name);
-          break;
-          
-        case 'answerGeneralQuery':
-          // Pass family context to GPT if available - GPT does ALL the intelligence!
-          result = await this.generalTool.answerGeneralQuery(query, familyContext);
-          break;
-          
-        default:
-          throw new Error(`Unknown tool: ${selection.selectedTool}`);
-      }
+      this.logToolSelection(selection);
+
+      selection.parameters = { query, ...(selection.parameters || {}) };
+
+      const familyContext = await this.fetchFamilyContextIfNeeded(selection, query);
+      await this.ensureRequiredParameters(selection, query, familyContext);
+
+      const result = await this.executeSelectedTool(selection, query, familyContext);
       
       const executionTime = Date.now() - startTime;
       
@@ -184,6 +93,140 @@ export class FamilyAgent {
         },
         executionTime
       };
+    }
+  }
+
+  private logToolSelection(selection: ToolSelectionResult) {
+    console.log('📊 TOOL SELECTION RESULT:');
+    console.log(`   Selected Tool: ${selection.selectedTool}`);
+    console.log(`   Confidence: ${(selection.confidence * 100).toFixed(0)}%`);
+    console.log(`   Reasoning: ${selection.reasoning}`);
+    console.log(`   Parameters:`, JSON.stringify(selection.parameters, null, 2));
+    console.log('');
+    console.log('⚙️  EXECUTING TOOL...\n');
+  }
+
+  private async fetchFamilyContextIfNeeded(selection: ToolSelectionResult, query: string) {
+    const familyContext: { members?: any[], count?: number, events?: any } = {};
+
+    if (selection.selectedTool !== 'answerGeneralQuery' || !selection.parameters?.needsFamilyContext) {
+      if (selection.selectedTool === 'answerGeneralQuery') {
+        console.log('⚠️  NO FAMILY CONTEXT - needsFamilyContext =', selection.parameters?.needsFamilyContext);
+        console.log('   GPT will answer WITHOUT family database access\n');
+      } else {
+        console.log(`ℹ️  Tool "${selection.selectedTool}" executing without pre-fetching GPT family context\n`);
+      }
+      return familyContext;
+    }
+
+    console.log('🔗 FETCHING FAMILY CONTEXT for GPT...');
+    console.log(`   needsFamilyContext = ${selection.parameters.needsFamilyContext}\n`);
+
+    if (selection.parameters.fetchMembers) {
+      console.log('   → LLM requested: Fetch family members');
+      const familyResult = await this.familyClient.getFamily();
+      if (familyResult.success) {
+        familyContext.members = familyResult.data.members;
+        familyContext.count = familyResult.data.count;
+        console.log(`   ✓ Retrieved ${familyContext.count} family members`);
+        if (familyContext.members) {
+          console.log(`   ✓ Members:`, familyContext.members.map((m: any) => m.name).join(', '));
+        }
+      } else {
+        console.error('   ❌ Failed to fetch family members:', familyResult.error);
+      }
+    }
+
+    if (selection.parameters.fetchEvents) {
+      console.log('   → LLM requested: Fetch events');
+
+      const lowerQuery = (selection.parameters.query || query).toLowerCase();
+      let personName: string | undefined;
+
+      if (familyContext.members) {
+        personName = familyContext.members.find((m: any) =>
+          lowerQuery.includes(m.name.toLowerCase())
+        )?.name;
+      }
+
+      if (personName) {
+        console.log(`   → Fetching events for: ${personName}`);
+        const eventsResult = await this.familyClient.getEvents(personName);
+
+        if (eventsResult.success) {
+          familyContext.events = eventsResult.data;
+          console.log(`   ✓ Retrieved ${eventsResult.data.events?.length || 0} events for ${personName}`);
+        } else {
+          console.log(`   ⚠️  No events found for ${personName}`);
+        }
+      } else {
+        console.log(`   ⚠️  Could not identify person name in query for event lookup`);
+      }
+    }
+
+    console.log('   ✓ GPT will analyze this data and answer the query\n');
+    return familyContext;
+  }
+
+  private async ensureRequiredParameters(selection: ToolSelectionResult, query: string, familyContext: { members?: any[] }) {
+    if (selection.selectedTool !== 'getEvents') {
+      return;
+    }
+
+    const parameters = selection.parameters || (selection.parameters = {});
+    const lowerQuery = (parameters.query || query).toLowerCase();
+
+    if (!parameters.name) {
+      console.log('🔍 Attempting to identify family member for event lookup from query text...');
+
+      let membersSource = familyContext.members;
+      if (!membersSource) {
+        const familyResult = await this.familyClient.getFamily();
+        if (familyResult.success && Array.isArray(familyResult.data.members)) {
+          membersSource = familyResult.data.members;
+        }
+      }
+
+      if (membersSource) {
+        const matchedMember = membersSource.find((member: any) =>
+          lowerQuery.includes(member.name.toLowerCase())
+        );
+
+        if (matchedMember) {
+          parameters.name = matchedMember.name;
+          console.log(`   ✓ Detected family member: ${parameters.name}`);
+        }
+      }
+    }
+
+    if (!parameters.name) {
+      throw new Error('Missing required parameter: name (could not determine which family member to fetch events for)');
+    }
+
+    console.log(`   → Event target confirmed: ${parameters.name}\n`);
+  }
+
+  private async executeSelectedTool(selection: ToolSelectionResult, query: string, familyContext: { members?: any[], count?: number, events?: any } = {}): Promise<ToolResult> {
+    switch (selection.selectedTool) {
+      case 'getDPOCH':
+        return this.familyClient.getDPOCH();
+
+      case 'getEvents': {
+        const name = selection.parameters?.name;
+        if (!name) {
+          throw new Error('Missing required parameter: name');
+        }
+        return this.familyClient.getEvents(name, selection.parameters?.refDate);
+      }
+
+      case 'getFamily':
+        return this.familyClient.getFamily(selection.parameters?.name);
+
+      case 'answerGeneralQuery':
+        return this.generalTool.answerGeneralQuery(query, familyContext);
+
+      default:
+        throw new Error(`Unknown tool: ${selection.selectedTool}`);
     }
   }
 

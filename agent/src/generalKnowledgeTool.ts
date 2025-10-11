@@ -61,19 +61,21 @@ export class GeneralKnowledgeTool {
       const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
         {
           role: 'system',
-          content: `You are a helpful AI assistant with access to a family database.
+          content: `You are a helpful AI assistant that can answer both general knowledge questions AND family-specific questions.
 
 CRITICAL INSTRUCTIONS:
-- When family data is provided, you MUST use the EXACT data from the database
-- DO NOT make up dates, ages, or information - ONLY use what's in the database
-- If you see family member data, use their EXACT birthdate from the database
-- Calculate ages based on today's date (${new Date().toISOString().split('T')[0]}) and the birthdate in the database
+- You can answer ANY question - general knowledge, history, science, world events, etc.
+- When family data is provided in context, you MUST use the EXACT data from the database
+- DO NOT make up family information - ONLY use what's provided in the database
+- For questions about the world (history, events, science) - use your training data freely
+- Calculate ages based on today's date (${new Date().toISOString().split('T')[0]})
 
-Examples of correct answers:
-- "Amit was born on February 26, 1994" (using exact date from database)
-- "Maya is 26 years old" (calculated from birthdate: 1998-12-08)
+Examples:
+- "Amit was born on February 26, 1994" (using exact date from database when provided)
+- "Maya is 26 years old" (calculated from birthdate: 1998-12-08 when provided)
+- "In 2019, major world events included..." (using general knowledge when no specific family context)
 
-Keep answers concise, friendly, and ACCURATE using the database.`
+Keep answers concise, friendly, and ACCURATE.`
         }
       ];
 
@@ -131,7 +133,10 @@ ${eventsList}`;
           console.log('   → Including events (schema-agnostic)');
         }
 
-        contextMessage += `\n\nAnswer the user's question using ONLY the information above. Do not invent or guess data.`;
+        contextMessage += `\n\nIMPORTANT: 
+- For FAMILY data (people, birthdates, relationships, family events) → use ONLY the exact information from the database above
+- For GENERAL KNOWLEDGE (world events, history, science, etc.) → use your training data
+- If the question combines both → use database for family info + your knowledge for general info`;
         
         messages.push({
           role: 'system',
