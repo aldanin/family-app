@@ -42,6 +42,37 @@
         <span class="timestamp">{{ message.timestamp | date:'short' }}</span>
       </div>
       <div class="message-content">{{ message.content }}</div>
+      
+      <!-- Iterations (Multi-Pass ReACT) -->
+      <div *ngIf="message.iterations && message.iterations.length > 0" class="iterations-section">
+        <button class="iterations-toggle" (click)="toggleIterations(message)">
+          <span class="toggle-icon">{{ message.showIterations ? '▼' : '▶' }}</span>
+          🔄 {{ message.iterations.length }} iteration{{ message.iterations.length > 1 ? 's' : '' }}
+        </button>
+        
+        <div *ngIf="message.showIterations" class="iterations-list">
+          <div *ngFor="let iteration of message.iterations" class="iteration">
+            <div class="iteration-header">
+              <span class="iteration-number">Iteration {{ iteration.iterationNumber }}</span>
+              <span class="iteration-time">{{ iteration.timestamp | date:'mediumTime' }}</span>
+            </div>
+            <div class="iteration-step">
+              <span class="step-label">💭 Thought:</span>
+              <span class="step-content">{{ iteration.thought }}</span>
+            </div>
+            <div class="iteration-step">
+              <span class="step-label">🎯 Action:</span>
+              <span class="step-content">{{ iteration.action }}</span>
+              <span *ngIf="iteration.actionInput" class="step-input">{{ iteration.actionInput | json }}</span>
+            </div>
+            <div class="iteration-step">
+              <span class="step-label">👁️ Observation:</span>
+              <span class="step-content">{{ iteration.observation }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
       <div *ngIf="message.toolUsed" class="message-footer">
         <span class="tool">Tool: {{ message.toolUsed }}</span>
         <span class="time">{{ message.executionTime }}ms</span>

@@ -4,12 +4,23 @@ import { FormsModule } from '@angular/forms';
 import { HttpClientModule } from '@angular/common/http';
 import { AgentService } from './services/agent.service';
 
+interface AgentIteration {
+  iterationNumber: number;
+  thought: string;
+  action: string;
+  actionInput?: any;
+  observation: string;
+  timestamp: Date;
+}
+
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
   toolUsed?: string;
   executionTime?: number;
+  iterations?: AgentIteration[];  // Multi-pass iterations
+  showIterations?: boolean;  // Toggle to show/hide iterations
 }
 
 @Component({
@@ -61,18 +72,53 @@ export class AppComponent {
             }))
         : []; // Empty array when history is disabled
 
-      const response = await this.agentService.query(message, conversationHistory, this.multiPassMode ? 'multi-pass' : 'single-pass');
+      const mode = this.multiPassMode ? 'multi-pass' : 'single-pass';
       
-      // Unified response structure - just get the answer!
-      const content = response.result.answer || JSON.stringify(response.result, null, 2);
+      // Use streaming for multi-pass mode to show iterations in real-time
+      if (this.multiPassMode) {
+        // Create placeholder message for streaming iterations
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: '⏳ Thinking...',
+          timestamp: new Date(),
+          iterations: [],
+          showIterations: false  // Auto-expand for live updates
+        };
+        this.messages.push(assistantMessage);
 
-      this.messages.push({
-        role: 'assistant',
-        content,
-        timestamp: new Date(),
-        toolUsed: response.selectedTool,
-        executionTime: response.executionTime
-      });
+        const response = await this.agentService.queryStream(
+          message, 
+          conversationHistory, 
+          mode,
+          (iteration) => {
+            // Real-time iteration update!
+            assistantMessage.iterations = assistantMessage.iterations || [];
+            assistantMessage.iterations.push(iteration);
+            this.scrollToBottom();
+          }
+        );
+
+        // Update with final answer
+        const content = response.result.answer || JSON.stringify(response.result, null, 2);
+        assistantMessage.content = content;
+        assistantMessage.toolUsed = response.selectedTool;
+        assistantMessage.executionTime = response.executionTime;
+      } else {
+        // Non-streaming for single-pass
+        const response = await this.agentService.query(message, conversationHistory, mode);
+        
+        const content = response.result.answer || JSON.stringify(response.result, null, 2);
+
+        this.messages.push({
+          role: 'assistant',
+          content,
+          timestamp: new Date(),
+          toolUsed: response.selectedTool,
+          executionTime: response.executionTime,
+          iterations: response.iterations || [],
+          showIterations: false
+        });
+      }
     } catch (error) {
       this.messages.push({
         role: 'assistant',
@@ -87,6 +133,10 @@ export class AppComponent {
 
   clearChat() {
     this.messages = [];
+  }
+
+  toggleIterations(message: Message) {
+    message.showIterations = !message.showIterations;
   }
 
   private scrollToBottom() {

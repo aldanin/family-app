@@ -59,7 +59,58 @@ app.get('/api/capabilities', (req: Request, res: Response) => {
   }
 });
 
-// Main query endpoint
+// Streaming query endpoint (SSE)
+app.post('/api/query/stream', async (req: Request, res: Response) => {
+  try {
+    const { query, conversationHistory = [], mode = 'single-pass' } = req.body;
+
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({
+        error: 'Invalid request',
+        message: 'Query parameter is required and must be a string'
+      });
+    }
+
+    console.log(`📝 Received streaming query: "${query}" (mode: ${mode})`);
+
+    // Set headers for SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    // Only multi-pass mode supports streaming
+    if (mode !== 'multi-pass') {
+      // For single-pass, just send the result at once
+      const selectedAgent = singlePassAgent;
+      const response = await selectedAgent.processQuery(query, conversationHistory);
+      res.write(`data: ${JSON.stringify({ type: 'complete', data: response })}\n\n`);
+      res.end();
+      return;
+    }
+
+    // Multi-pass with streaming
+    // Set up callback to stream iterations as they happen
+    multiPassAgent.setOnIterationCallback((iteration) => {
+      res.write(`data: ${JSON.stringify({ type: 'iteration', data: iteration })}\n\n`);
+    });
+
+    const response = await multiPassAgent.processQuery(query, conversationHistory);
+    
+    // Send final complete message
+    res.write(`data: ${JSON.stringify({ type: 'complete', data: response })}\n\n`);
+    res.end();
+
+  } catch (error) {
+    console.error('❌ Error in streaming query:', error);
+    res.write(`data: ${JSON.stringify({ 
+      type: 'error', 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    })}\n\n`);
+    res.end();
+  }
+});
+
+// Main query endpoint (non-streaming, original)
 app.post('/api/query', async (req: Request, res: Response) => {
   try {
     const { query, conversationHistory = [], mode = 'single-pass' } = req.body;

@@ -33,6 +33,7 @@ export class MultiPassAgent {
   private openai: OpenAI | null = null;
   private model: string;
   private maxIterations: number = 5;
+  private onIterationCallback?: (iteration: AgentIteration) => void;
 
   constructor(
     mcpServerUrl: string,
@@ -51,6 +52,13 @@ export class MultiPassAgent {
     } else {
       console.log('⚠️  Multi-Pass Agent: OpenAI API key not provided. Limited functionality.');
     }
+  }
+
+  /**
+   * Set callback for iteration updates (for streaming)
+   */
+  setOnIterationCallback(callback: (iteration: AgentIteration) => void) {
+    this.onIterationCallback = callback;
   }
 
   /**
@@ -112,6 +120,11 @@ export class MultiPassAgent {
         timestamp: new Date()
       };
       state.iterations.push(iteration);
+      
+      // Emit iteration update if callback is set (for streaming)
+      if (this.onIterationCallback) {
+        this.onIterationCallback(iteration);
+      }
       
       // Check if agent decided to finish
       if (action.action === 'FINISH') {

@@ -201,6 +201,103 @@
   gap: 15px;
 }
 
+/* Iterations Section (Multi-Pass ReACT) */
+.iterations-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.iterations-toggle {
+  background: rgba(102, 126, 234, 0.1);
+  border: 1px solid rgba(102, 126, 234, 0.3);
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #667eea;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.3s;
+  width: 100%;
+  text-align: left;
+}
+
+.iterations-toggle:hover {
+  background: rgba(102, 126, 234, 0.15);
+  border-color: rgba(102, 126, 234, 0.5);
+}
+
+.toggle-icon {
+  font-size: 10px;
+  transition: transform 0.3s;
+}
+
+.iterations-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.iteration {
+  background: rgba(0, 0, 0, 0.03);
+  border-left: 3px solid #667eea;
+  border-radius: 6px;
+  padding: 10px;
+  font-size: 12px;
+}
+
+.iteration-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: #667eea;
+}
+
+.iteration-number {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.iteration-time {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.iteration-step {
+  margin: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.step-label {
+  font-weight: 600;
+  font-size: 11px;
+  color: #555;
+}
+
+.step-content {
+  color: #333;
+  line-height: 1.4;
+  padding-left: 20px;
+}
+
+.step-input {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-left: 20px;
+  color: #666;
+}
+
 .typing-indicator {
   display: flex;
   gap: 4px;
