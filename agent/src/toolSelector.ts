@@ -57,7 +57,7 @@ export class ToolSelector {
       });
 
       const selectionRaw = response.choices?.[0]?.message?.content || '{}';
-      const selection = this.safeParse(selectionRaw);
+      const selection = this.normalizeSelection(this.safeParse(selectionRaw));
 
       // Structured logging
       console.log('✓ LLM-based tool selection:');
@@ -68,14 +68,14 @@ export class ToolSelector {
       console.log(`  → Fetch Events: ${selection.fetchEvents ? 'Yes' : 'No'}\n`);
 
       return {
-        selectedTool: selection.tool || 'answerGeneralQuery',
-        reasoning: selection.reasoning || 'LLM-based selection',
+        selectedTool: selection.tool,
+        reasoning: selection.reasoning,
         confidence: 0.95,
         parameters: {
           query,
-          needsFamilyContext: selection.needsFamilyContext || false,
-          fetchMembers: selection.fetchMembers || false,
-          fetchEvents: selection.fetchEvents || false
+          needsFamilyContext: selection.needsFamilyContext,
+          fetchMembers: selection.fetchMembers,
+          fetchEvents: selection.fetchEvents
         }
       };
     } catch (error) {
@@ -86,53 +86,46 @@ export class ToolSelector {
 
   private buildSystemPrompt(): string {
     return this.dedent`
-      You are a tool selection assistant for an AI agent that has access to a family database via MCP server.
+      You help decide which tool the agent should run. Follow the rules precisely and answer ONLY with JSON.
 
-      Available tools:
+      TOOLS:
       ${this.availableTools.map((t) => `- ${t.name}: ${t.description}`).join('\n')}
 
-      FAMILY DATABASE:
-      The database has two types of data:
-      - MEMBER DATA: Basic info (names, birthdates, roles, relationships, occupations)
-      - EVENT DATA: Life events (graduations, weddings, achievements, etc.)
-      - DPOCH: The oldest birthdate in the database (special query)
+      JSON CONTRACT:
+      {
+        "tool": "answerGeneralQuery" | "getDPOCH",
+        "reasoning": "short explanation",
+        "fetchMembers": true | false,
+        "fetchEvents": true | false,
+        "needsFamilyContext": true | false
+      }
 
-      TOOL SELECTION:
-      - ALWAYS use "answerGeneralQuery" for natural language questions (it will fetch needed data automatically)
-      - ONLY use direct MCP tools (getDPOCH, getEvents, getFamily) if explicitly building a tool/API (rare)
-      - For user questions → "answerGeneralQuery" + specify what data to fetch (fetchMembers/fetchEvents)
+      CORE RULES:
+      1. Default to "answerGeneralQuery" for user questions. It combines MCP data with the model's own knowledge.
+      2. Use "getDPOCH" ONLY if the user explicitly asks for DPOCH / oldest birthdate.
+      3. NEVER return raw data tools (getFamily/getEvents) directly for conversational answers.
 
-      YOUR JOB:
-      Analyze the query and decide what data is needed to answer it.
+      FLAG RULES:
+      - fetchMembers = true when the question needs MEMBER info (names, birthdates, ages, relationships, "who is" someone, etc.).
+      - fetchEvents = true when the question needs FAMILY event history (graduations, weddings, achievements, timeline). For "family events" or "events for <person>", set this flag.
+      - World/general history questions do NOT require fetchEvents; the model already knows world events.
+      - If a question mixes world + family events, set fetchEvents = true so the agent retrieves family events, and let the model add world events itself.
+      - When a specific family member is referenced, set fetchMembers = true (needed for context even if the final answer discusses world topics).
+      - needsFamilyContext MUST be true whenever fetchMembers or fetchEvents is true; otherwise false.
 
-      GUIDELINES:
-      - Questions about people, ages, relationships → need MEMBER DATA (fetchMembers: true)
-      - Questions about FAMILY events/achievements (graduations, weddings, etc.) → need EVENT DATA (fetchEvents: true)
-      - Questions about WORLD events → use GPT's general knowledge (fetchEvents: false)
-      - If the query mentions BOTH world and family events → fetchEvents: true (GPT will handle world events from its knowledge)
-      - Some questions need BOTH types of data to answer fully
-      - Questions that REFERENCE family members but ask about OTHER topics → still fetch family data as context
-      - Pure general knowledge questions (no family reference) → no data needed
-      - DPOCH queries → use the "getDPOCH" tool directly
+      STEP-BY-STEP THINKING:
+      1. Identify if the query is about family members, family events, world/general knowledge, or DPOCH.
+      2. Choose the correct tool using the core rules.
+      3. Decide which family datasets (members/events) must be fetched.
+      4. Set needsFamilyContext accordingly (true iff any dataset is fetched).
+      5. Reply with the JSON object only.
 
       EXAMPLES:
-      "When was Agam born?" → tool: "answerGeneralQuery", fetchMembers: true, fetchEvents: false
-      "Does Maya have a degree?" → tool: "answerGeneralQuery", fetchMembers: true, fetchEvents: true
-      "How old is Alon?" → tool: "answerGeneralQuery", fetchMembers: true, fetchEvents: false
-      "What world events happened when Roy was born?" → tool: "answerGeneralQuery", fetchMembers: true, fetchEvents: false
-      "What family events happened in 2019?" → tool: "answerGeneralQuery", fetchMembers: false, fetchEvents: true
-      "What world and family events happened in 2019?" → tool: "answerGeneralQuery", fetchMembers: false, fetchEvents: true
-      "What is AI?" → tool: "answerGeneralQuery", fetchMembers: false, fetchEvents: false
-      "What is DPOCH?" → tool: "getDPOCH"
-
-      Respond in JSON format: 
-      {
-        "tool": "answerGeneralQuery" | "getDPOCH", 
-        "reasoning": "why", 
-        "needsFamilyContext": true/false,
-        "fetchMembers": true/false,
-        "fetchEvents": true/false
-      }
+      - "What family events do we have?" → answerGeneralQuery, fetchMembers false, fetchEvents true, needsFamilyContext true.
+      - "Tell me about world events in 2019." → answerGeneralQuery, all fetch flags false, needsFamilyContext false.
+      - "What world events happened when Roy was born?" → answerGeneralQuery, fetchMembers true (to know Roy's birth year), fetchEvents false, needsFamilyContext true.
+      - "List the family and world events in 2019." → answerGeneralQuery, fetchMembers false, fetchEvents true, needsFamilyContext true.
+      - "What is DPOCH?" → getDPOCH, all fetch flags false, needsFamilyContext false.
     `;
   }
 
@@ -168,6 +161,35 @@ export class ToolSelector {
     }
   }
 
+  private normalizeSelection(raw: Record<string, any>): {
+    tool: 'answerGeneralQuery' | 'getDPOCH';
+    reasoning: string;
+    fetchMembers: boolean;
+    fetchEvents: boolean;
+    needsFamilyContext: boolean;
+  } {
+    const tool = raw.tool === 'getDPOCH' ? 'getDPOCH' : 'answerGeneralQuery';
+
+    const fetchMembers = Boolean(raw.fetchMembers);
+    const fetchEvents = Boolean(raw.fetchEvents);
+
+    const needsFamilyContext = tool === 'getDPOCH'
+      ? false
+      : Boolean(
+          raw.needsFamilyContext !== undefined
+            ? raw.needsFamilyContext
+            : fetchMembers || fetchEvents
+        );
+
+    return {
+      tool,
+      reasoning: raw.reasoning?.toString().trim() || 'LLM-based selection',
+      fetchMembers,
+      fetchEvents,
+      needsFamilyContext
+    };
+  }
+
   /**
    * Fallback selection when OpenAI is not available
    * Simple heuristic - assumes everything might need family context
@@ -180,7 +202,12 @@ export class ToolSelector {
       selectedTool: 'answerGeneralQuery',
       reasoning: 'Fallback mode - OpenAI not configured',
       confidence: 0.5,
-      parameters: { query, needsFamilyContext: true } // Safe default
+      parameters: {
+        query,
+        fetchMembers: true,
+        fetchEvents: true,
+        needsFamilyContext: true
+      } // Fetch everything so GPT has maximum context in fallback mode
     };
   }
 
@@ -192,29 +219,21 @@ export class ToolSelector {
 Tool Selection Strategy:
 ========================
 
-LLM-BASED INTELLIGENT SELECTION - NO HARD-CODED RULES!
-
-How it works:
-1. Agent receives a query from the user
-2. Tool Selector sends the query + tool descriptions to GPT
-3. GPT analyzes the query and decides which tool to use
-4. GPT returns: tool name, reasoning, and whether family context is needed
-5. Agent executes the selected tool
+LLM selects tools using explicit JSON contract. Key rules:
+- Default tool is answerGeneralQuery (LLM response with optional family context).
+- Use getDPOCH only for explicit DPOCH questions.
+- fetchMembers flag when people info is needed.
+- fetchEvents flag when family event history is needed.
+- needsFamilyContext mirrors whether any family data is fetched.
 
 Examples:
-- "When was Alon born?" → GPT selects: answerGeneralQuery + family context
-- "What is AI?" → GPT selects: answerGeneralQuery (no context)
-- "How old is Maya?" → GPT selects: answerGeneralQuery + family context
+- "When was Alon born?" → answerGeneralQuery, fetchMembers=true, fetchEvents=false.
+- "What family events do we have?" → answerGeneralQuery, fetchEvents=true.
+- "What world events happened when Roy was born?" → answerGeneralQuery, fetchMembers=true.
+- "What world events happened in 2019?" → answerGeneralQuery, no family context.
+- "What is DPOCH?" → getDPOCH, no family context.
 
-Benefits:
-✅ NO hard-coded keywords (maya, alon, born, etc.)
-✅ NO hard-coded logic (if/else statements)
-✅ LLM understands context and intent
-✅ Works with new family members automatically
-✅ Handles complex queries naturally
-
-Fallback:
-- If OpenAI is not configured, uses simple heuristic (assumes family context)
+Fallback mode returns answerGeneralQuery with both datasets fetched so GPT can still answer.
     `.trim();
   }
 }

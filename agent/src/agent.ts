@@ -143,24 +143,61 @@ export class FamilyAgent {
       const lowerQuery = (selection.parameters.query || query).toLowerCase();
       let personName: string | undefined;
 
+      // Ensure we have member data to reference names when searching for events
+      if (!familyContext.members) {
+        console.log('   → No member list yet. Fetching family members to locate events...');
+        const familyResult = await this.familyClient.getFamily();
+        if (familyResult.success) {
+          familyContext.members = familyResult.data.members;
+          familyContext.count = familyResult.data.count;
+          console.log(`   ✓ Retrieved ${familyContext.count} family members for event lookup`);
+        } else {
+          console.error('   ❌ Failed to fetch family members needed for events:', familyResult.error);
+        }
+      }
+
       if (familyContext.members) {
         personName = familyContext.members.find((m: any) =>
           lowerQuery.includes(m.name.toLowerCase())
         )?.name;
       }
 
-      if (personName) {
-        console.log(`   → Fetching events for: ${personName}`);
-        const eventsResult = await this.familyClient.getEvents(personName);
+      const targetMembers: string[] = [];
 
-        if (eventsResult.success) {
-          familyContext.events = eventsResult.data;
-          console.log(`   ✓ Retrieved ${eventsResult.data.events?.length || 0} events for ${personName}`);
+      if (personName) {
+        targetMembers.push(personName);
+      } else if (familyContext.members) {
+        console.log('   → No specific person mentioned. Aggregating events for the whole family.');
+        targetMembers.push(...familyContext.members.map((m: any) => m.name));
+      }
+
+      const aggregatedEvents: any[] = [];
+
+      for (const memberName of targetMembers) {
+        console.log(`   → Fetching events for: ${memberName}`);
+        const eventsResult = await this.familyClient.getEvents(memberName);
+
+        if (eventsResult.success && eventsResult.data?.events?.length) {
+          const eventsWithOwner = eventsResult.data.events.map((event: any) => ({
+            ...event,
+            person: memberName
+          }));
+          aggregatedEvents.push(...eventsWithOwner);
+          console.log(`     ✓ Retrieved ${eventsWithOwner.length} event(s) for ${memberName}`);
         } else {
-          console.log(`   ⚠️  No events found for ${personName}`);
+          console.log(`     ⚠️  No events found for ${memberName}`);
         }
+      }
+
+      if (aggregatedEvents.length > 0) {
+        const label = targetMembers.length === 1 ? targetMembers[0] : 'Family';
+        familyContext.events = {
+          name: label,
+          events: aggregatedEvents
+        };
+        console.log(`   ✓ Aggregated ${aggregatedEvents.length} event(s) (${label})`);
       } else {
-        console.log(`   ⚠️  Could not identify person name in query for event lookup`);
+        console.log('   ⚠️  No family events available to provide as context');
       }
     }
 
