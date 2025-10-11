@@ -305,9 +305,25 @@ Select the next action (JSON only):`
 
         case 'getDPOCH': {
           const result = await this.mcpClient.getDPOCH();
+          console.log('🔍 getDPOCH result:', JSON.stringify(result, null, 2));
+          
           const dpoch = result.data?.dpoch;
+          
+          if (!dpoch && dpoch !== 0) {
+            return `Error: Could not retrieve DPOCH value. Response: ${JSON.stringify(result)}`;
+          }
+          
           state.workingMemory.set('dpoch', dpoch);
-          return `DPOCH: ${dpoch}. Data stored in working memory.`;
+          
+          // Convert EPOCH to human-readable date for context
+          const date = new Date(Number(dpoch) * 1000);
+          const dateStr = date.toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          });
+          
+          return `DPOCH value retrieved: ${dpoch} (which is ${dateStr}). Data stored in working memory.`;
         }
 
         case 'FINISH': {

@@ -11,6 +11,7 @@ interface AgentIteration {
   actionInput?: any;
   observation: string;
   timestamp: Date;
+  summary?: string;  // Short one-line summary
 }
 
 interface Message {
@@ -21,6 +22,7 @@ interface Message {
   executionTime?: number;
   iterations?: AgentIteration[];  // Multi-pass iterations
   showIterations?: boolean;  // Toggle to show/hide iterations
+  iterationSummaries?: string[];  // Real-time summaries for streaming display
 }
 
 @Component({
@@ -82,7 +84,8 @@ export class AppComponent {
           content: '⏳ Thinking...',
           timestamp: new Date(),
           iterations: [],
-          showIterations: false  // Auto-expand for live updates
+          iterationSummaries: [],
+          showIterations: false
         };
         this.messages.push(assistantMessage);
 
@@ -91,9 +94,21 @@ export class AppComponent {
           conversationHistory, 
           mode,
           (iteration) => {
-            // Real-time iteration update!
+            // Real-time iteration update with summarized one-liner!
+            // Safety check for valid iteration data
+            if (!iteration) {
+              console.warn('Received undefined iteration');
+              return;
+            }
+            
             assistantMessage.iterations = assistantMessage.iterations || [];
             assistantMessage.iterations.push(iteration);
+            
+            // Generate and add summary
+            const summary = this.generateIterationSummary(iteration);
+            assistantMessage.iterationSummaries = assistantMessage.iterationSummaries || [];
+            assistantMessage.iterationSummaries.push(summary);
+            
             this.scrollToBottom();
           }
         );
@@ -137,6 +152,38 @@ export class AppComponent {
 
   toggleIterations(message: Message) {
     message.showIterations = !message.showIterations;
+  }
+
+  generateIterationSummary(iteration: AgentIteration): string {
+    // Safety check for undefined/null values
+    if (!iteration || !iteration.action) {
+      return '🔄 Processing...';
+    }
+    
+    const action = iteration.action.toLowerCase();
+    const input = iteration.actionInput;
+    
+    // Extract key parameters from actionInput
+    let detail = '';
+    if (input && typeof input === 'object') {
+      if (input.name) detail = input.name;
+      else if (input.refDate) detail = 'from date';
+      else if (input.query) detail = input.query;
+    }
+    
+    // Generate natural language summaries based on action
+    switch (action) {
+      case 'getfamily':
+        return detail ? `📋 Getting family data for ${detail}` : '📋 Reading family data';
+      case 'getevents':
+        return detail ? `📅 Getting events for ${detail}` : '📅 Reading events data';
+      case 'getdpoch':
+        return '⏰ Reading DPOCH data';
+      case 'finish':
+        return '✅ Formulating final answer';
+      default:
+        return `🔧 ${action}${detail ? ': ' + detail : ''}`;
+    }
   }
 
   private scrollToBottom() {

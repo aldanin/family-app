@@ -108,20 +108,30 @@ export class FamilyMCPClient {
       });
 
       // Parse response
+      console.log('🔍 Raw getDPOCH result:', JSON.stringify(result, null, 2));
+      
       const resultData = result as any;
       const content = resultData.content?.[0];
-      let dpochValue: string;
+      let dpochValue: any;
 
       if (content?.type === 'text') {
         // Try to parse JSON response
         try {
           const parsed = JSON.parse(content.text);
-          dpochValue = parsed.dpoch || parsed;
+          console.log('🔍 Parsed getDPOCH content:', parsed);
+          dpochValue = parsed.dpoch !== undefined ? parsed.dpoch : parsed;
         } catch {
           dpochValue = content.text;
         }
       } else {
-        dpochValue = String(content);
+        dpochValue = content;
+      }
+
+      console.log('🔍 Final dpochValue:', dpochValue);
+
+      // Ensure we have a valid value
+      if (dpochValue === undefined || dpochValue === null || dpochValue === 'undefined') {
+        throw new Error(`Invalid DPOCH value received: ${dpochValue}. Full response: ${JSON.stringify(result)}`);
       }
 
       return {

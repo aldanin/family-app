@@ -202,6 +202,48 @@
 }
 
 /* Iterations Section (Multi-Pass ReACT) */
+
+/* Real-time iteration summaries - clean one-liners */
+.iteration-summaries {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(102, 126, 234, 0.05);
+  border-left: 3px solid #667eea;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.iteration-summary {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+  color: #555;
+  animation: fadeInSlide 0.3s ease-out;
+}
+
+.summary-number {
+  color: #667eea;
+  font-weight: 600;
+  min-width: 20px;
+}
+
+.summary-text {
+  color: #333;
+}
+
+@keyframes fadeInSlide {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Detailed iterations - expandable for power users */
 .iterations-section {
   margin-top: 12px;
   padding-top: 12px;

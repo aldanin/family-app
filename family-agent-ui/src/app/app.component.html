@@ -43,11 +43,19 @@
       </div>
       <div class="message-content">{{ message.content }}</div>
       
-      <!-- Iterations (Multi-Pass ReACT) -->
+      <!-- Real-time iteration summaries (Multi-Pass ReACT) -->
+      <div *ngIf="message.iterationSummaries && message.iterationSummaries.length > 0" class="iteration-summaries">
+        <div *ngFor="let summary of message.iterationSummaries; let i = index" class="iteration-summary">
+          <span class="summary-number">{{ i + 1 }}.</span>
+          <span class="summary-text">{{ summary }}</span>
+        </div>
+      </div>
+      
+      <!-- Detailed iterations (expandable) -->
       <div *ngIf="message.iterations && message.iterations.length > 0" class="iterations-section">
         <button class="iterations-toggle" (click)="toggleIterations(message)">
           <span class="toggle-icon">{{ message.showIterations ? '▼' : '▶' }}</span>
-          🔄 {{ message.iterations.length }} iteration{{ message.iterations.length > 1 ? 's' : '' }}
+          � View detailed iterations
         </button>
         
         <div *ngIf="message.showIterations" class="iterations-list">

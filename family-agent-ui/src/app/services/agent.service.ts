@@ -87,15 +87,25 @@ export class AgentService {
           const lines = chunk.split('\n');
 
           for (const line of lines) {
+            // Skip empty lines
+            if (!line || !line.trim()) continue;
+            
             if (line.startsWith('data: ')) {
-              const data = JSON.parse(line.substring(6));
-              
-              if (data.type === 'iteration') {
-                onIteration(data.data);
-              } else if (data.type === 'complete') {
-                resolve(data.data);
-              } else if (data.type === 'error') {
-                reject(new Error(data.error));
+              try {
+                const jsonString = line.substring(6);
+                console.log('Parsing SSE data:', jsonString);
+                const data = JSON.parse(jsonString);
+                
+                if (data.type === 'iteration') {
+                  console.log('Iteration received:', data.data);
+                  onIteration(data.data);
+                } else if (data.type === 'complete') {
+                  resolve(data.data);
+                } else if (data.type === 'error') {
+                  reject(new Error(data.error));
+                }
+              } catch (parseError) {
+                console.warn('Failed to parse SSE data:', line, parseError);
               }
             }
           }
