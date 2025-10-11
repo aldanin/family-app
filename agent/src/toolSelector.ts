@@ -109,6 +109,7 @@ export class ToolSelector {
   - fetchMembers = true when the question needs MEMBER info (names, birthdates, ages, relationships, "who is" someone, etc.).
   - Also set fetchMembers = true for help/expertise questions ("who should I call", "who can help with", "who would you recommend") even if the word "family" is missing—assume the user wants a family member.
   - fetchEvents = true when the question needs FAMILY event history (graduations, weddings, achievements, timeline). For "family events" or "events for <person>", set this flag.
+  - For questions about someone's life events (wedding, graduation, etc.), set BOTH fetchMembers (to get relationship context like spouse) AND fetchEvents (to get the event details).
   - World/general history questions do NOT require fetchEvents; the model already knows world events.
   - If a question mixes world + family events, set fetchEvents = true so the agent retrieves family events, and let the model add world events itself.
   - When a specific family member is referenced, set fetchMembers = true (needed for context even if the final answer discusses world topics).
@@ -127,6 +128,8 @@ export class ToolSelector {
   - "What world events happened when Roy was born?" → answerGeneralQuery, fetchMembers true (to know Roy's birth year), fetchEvents false, needsFamilyContext true.
   - "List the family and world events in 2019." → answerGeneralQuery, fetchMembers false, fetchEvents true, needsFamilyContext true.
   - "If I have a stutter, who should I call?" → answerGeneralQuery, fetchMembers true, fetchEvents false, needsFamilyContext true.
+  - "When is Liad's wedding?" → answerGeneralQuery, fetchMembers true (to get spouse info), fetchEvents true (to get wedding date), needsFamilyContext true.
+  - "Does Maya have a degree?" → answerGeneralQuery, fetchMembers true (to identify Maya), fetchEvents true (to check graduation events), needsFamilyContext true.
   - "What is DPOCH?" → getDPOCH, all fetch flags false, needsFamilyContext false.
     `;
   }

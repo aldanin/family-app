@@ -140,12 +140,9 @@ export class FamilyAgent {
     if (selection.parameters.fetchEvents) {
       console.log('   → LLM requested: Fetch events');
 
-      const lowerQuery = (selection.parameters.query || query).toLowerCase();
-      let personName: string | undefined;
-
-      // Ensure we have member data to reference names when searching for events
+      // Ensure we have member data to iterate through all members
       if (!familyContext.members) {
-        console.log('   → No member list yet. Fetching family members to locate events...');
+        console.log('   → No member list yet. Fetching family members for event lookup...');
         const familyResult = await this.familyClient.getFamily();
         if (familyResult.success) {
           familyContext.members = familyResult.data.members;
@@ -156,48 +153,36 @@ export class FamilyAgent {
         }
       }
 
-      if (familyContext.members) {
-        personName = familyContext.members.find((m: any) =>
-          lowerQuery.includes(m.name.toLowerCase())
-        )?.name;
-      }
-
-      const targetMembers: string[] = [];
-
-      if (personName) {
-        targetMembers.push(personName);
-      } else if (familyContext.members) {
-        console.log('   → No specific person mentioned. Aggregating events for the whole family.');
-        targetMembers.push(...familyContext.members.map((m: any) => m.name));
-      }
-
+      // AGENTIC PATTERN: Fetch ALL events and let GPT decide which ones matter
+      // No hard-coded logic to guess whose events we need!
       const aggregatedEvents: any[] = [];
 
-      for (const memberName of targetMembers) {
-        console.log(`   → Fetching events for: ${memberName}`);
-        const eventsResult = await this.familyClient.getEvents(memberName);
+      if (familyContext.members) {
+        console.log(`   → Fetching events for ALL ${familyContext.members.length} family members (GPT will filter relevant ones)`);
+        
+        for (const member of familyContext.members) {
+          const eventsResult = await this.familyClient.getEvents(member.name);
 
-        if (eventsResult.success && eventsResult.data?.events?.length) {
-          const eventsWithOwner = eventsResult.data.events.map((event: any) => ({
-            ...event,
-            person: memberName
-          }));
-          aggregatedEvents.push(...eventsWithOwner);
-          console.log(`     ✓ Retrieved ${eventsWithOwner.length} event(s) for ${memberName}`);
-        } else {
-          console.log(`     ⚠️  No events found for ${memberName}`);
+          if (eventsResult.success && eventsResult.data?.events?.length) {
+            const eventsWithOwner = eventsResult.data.events.map((event: any) => ({
+              ...event,
+              person: member.name
+            }));
+            aggregatedEvents.push(...eventsWithOwner);
+            console.log(`     ✓ ${member.name}: ${eventsWithOwner.length} event(s)`);
+          }
         }
-      }
 
-      if (aggregatedEvents.length > 0) {
-        const label = targetMembers.length === 1 ? targetMembers[0] : 'Family';
-        familyContext.events = {
-          name: label,
-          events: aggregatedEvents
-        };
-        console.log(`   ✓ Aggregated ${aggregatedEvents.length} event(s) (${label})`);
-      } else {
-        console.log('   ⚠️  No family events available to provide as context');
+        if (aggregatedEvents.length > 0) {
+          familyContext.events = {
+            name: 'Family',
+            events: aggregatedEvents
+          };
+          console.log(`   ✓ Total: ${aggregatedEvents.length} event(s) from all family members`);
+          console.log(`   → GPT will analyze and select relevant events for the query\n`);
+        } else {
+          console.log('   ⚠️  No family events found in database\n');
+        }
       }
     }
 
