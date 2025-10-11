@@ -1,4 +1,4 @@
-/**
+I. /**
  * Multi-Pass ReACT Agent
  * 
  * Uses the ReACT pattern (Reasoning + Acting) for iterative problem solving:
@@ -180,18 +180,25 @@ export class MultiPassAgent {
         role: 'system',
         content: `You are a reasoning agent. Analyze the current state and think about what to do next.
 
-Your goal: Answer the user's query by gathering necessary information.
+Your goal: Answer the user's query EFFICIENTLY by gathering ONLY necessary information.
 
 Available tools:
-- getFamily: Get family member data
+- getFamily: Get family member data (name, birthdate, role, etc.)
 - getEvents: Get events for a specific person
-- getDPOCH: Get the oldest birthdate epoch
+- getDPOCH: Get the oldest birthdate epoch (ONLY use when query explicitly asks about DPOCH or relative time calculations)
 - FINISH: When you have all info needed to answer
 
+IMPORTANT EFFICIENCY RULES:
+1. For simple factual queries (e.g., "when was X born", "who is X"), use ONLY getFamily
+2. ONLY use getDPOCH if the query explicitly mentions DPOCH or asks "how long after DPOCH"
+3. ONLY use getEvents if the query asks about events, achievements, or timeline
+4. If you already have the answer in working memory, use FINISH immediately
+5. Minimize tool calls - think "what's the MINIMUM I need to answer this?"
+
 Think step by step:
-1. What information do I have so far?
-2. What information do I still need?
-3. What should I do next?
+1. What EXACTLY is the user asking for?
+2. Do I already have this information in working memory?
+3. What is the MINIMUM action needed to answer?
 
 Be concise but thorough in your reasoning.`
       },
@@ -234,13 +241,20 @@ What should I do next? Think step by step.`
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       {
         role: 'system',
-        content: `You are an action selector. Based on the reasoning, choose the next action.
+        content: `You are an action selector. Based on the reasoning, choose the MOST EFFICIENT next action.
 
 Available actions:
-- getFamily [name?: string] - Get family member(s) data
-- getEvents [name: string] - Get events for a person
-- getDPOCH - Get oldest birthdate epoch
-- FINISH - When ready to answer
+- getFamily [name?: string] - Get family member(s) data (includes birthdate, role, relationships, occupation)
+- getEvents [name: string] - Get events for a person (only use if query asks about events/achievements)
+- getDPOCH - Get oldest birthdate epoch (ONLY use if query explicitly mentions DPOCH or asks relative time)
+- FINISH - When ready to answer (use as soon as you have sufficient data)
+
+EFFICIENCY GUIDELINES:
+- For "when was X born" → ONLY use getFamily, then FINISH
+- For "who is X" → ONLY use getFamily, then FINISH  
+- For "what are X's events" → use getFamily first, then getEvents if needed, then FINISH
+- For "how long after DPOCH" → use getDPOCH AND getFamily/getEvents, then FINISH
+- NEVER call getDPOCH unless the query explicitly requires it
 
 Respond with JSON only:
 {"action": "actionName", "actionInput": {...}} 
