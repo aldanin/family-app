@@ -77,3 +77,37 @@ export interface DPOCHResponse {
   dpoch: string;
   description: string;
 }
+
+/**
+ * ReACT Multi-Pass Agent Types
+ */
+
+export interface AgentIteration {
+  iterationNumber: number;
+  thought: string;           // Agent's reasoning about what to do
+  action: string;            // Tool/action selected (or "FINISH")
+  actionInput?: any;         // Parameters for the tool
+  observation: string;       // Result from executing the action
+  timestamp: Date;
+}
+
+export interface AgentState {
+  query: string;
+  conversationHistory: Array<{role: string, content: string}>;
+  iterations: AgentIteration[];
+  workingMemory: Map<string, any>;  // Data collected across iterations
+  isComplete: boolean;
+  finalAnswer?: string;
+  maxIterations: number;
+  currentIteration: number;
+}
+
+/**
+ * Updated response to include multi-pass iterations
+ */
+export interface MultiPassAgentResponse extends AgentResponse {
+  iterations: AgentIteration[];
+  totalIterations: number;
+  reasoningSteps: string[];  // Summary of thinking at each step
+}
+

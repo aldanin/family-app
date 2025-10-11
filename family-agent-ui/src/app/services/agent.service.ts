@@ -23,11 +23,12 @@ export class AgentService {
 
   constructor(private http: HttpClient) {}
 
-  async query(query: string, conversationHistory: ConversationMessage[] = []): Promise<AgentResponse> {
+  async query(query: string, conversationHistory: ConversationMessage[] = [], mode: 'single-pass' | 'multi-pass' = 'single-pass'): Promise<AgentResponse> {
     return firstValueFrom(
       this.http.post<AgentResponse>(`${this.apiUrl}/query`, {
         query,
-        conversationHistory
+        conversationHistory,
+        mode
       })
     );
   }

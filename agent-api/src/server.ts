@@ -7,6 +7,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { FamilyAgent } from '../../agent/dist/agent';
+import { MultiPassAgent } from '../../agent/dist/multiPassAgent';
 
 // Load environment variables
 dotenv.config();
@@ -23,13 +24,16 @@ const mcpServerUrl = process.env.MCP_SERVER_URL || 'http://localhost:6402';
 const openaiApiKey = process.env.OPENAI_API_KEY;
 const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
-const agent = new FamilyAgent(mcpServerUrl, openaiApiKey, openaiModel);
+// Create both agent types
+const singlePassAgent = new FamilyAgent(mcpServerUrl, openaiApiKey, openaiModel);
+const multiPassAgent = new MultiPassAgent(mcpServerUrl, openaiApiKey, openaiModel, 5);
 
 console.log('🤖 Family AI Agent API Server');
 console.log('================================');
 console.log(`MCP Server: ${mcpServerUrl}`);
 console.log(`OpenAI Model: ${openaiModel}`);
 console.log(`OpenAI Configured: ${openaiApiKey ? '✅ Yes' : '⚠️  No (fallback mode)'}`);
+console.log(`Agents: Single-Pass + Multi-Pass ReACT`);
 console.log('');
 
 // Health check endpoint
@@ -45,7 +49,7 @@ app.get('/api/health', (req: Request, res: Response) => {
 // Get agent capabilities
 app.get('/api/capabilities', (req: Request, res: Response) => {
   try {
-    const capabilities = agent.getCapabilities();
+    const capabilities = singlePassAgent.getCapabilities();
     res.json(capabilities);
   } catch (error) {
     res.status(500).json({
@@ -58,7 +62,7 @@ app.get('/api/capabilities', (req: Request, res: Response) => {
 // Main query endpoint
 app.post('/api/query', async (req: Request, res: Response) => {
   try {
-    const { query, conversationHistory = [] } = req.body;
+    const { query, conversationHistory = [], mode = 'single-pass' } = req.body;
 
     if (!query || typeof query !== 'string') {
       return res.status(400).json({
@@ -67,9 +71,11 @@ app.post('/api/query', async (req: Request, res: Response) => {
       });
     }
 
-    console.log(`📝 Received query: "${query}" (history: ${conversationHistory.length} messages)`);
+    console.log(`📝 Received query: "${query}" (mode: ${mode}, history: ${conversationHistory.length} messages)`);
 
-    const response = await agent.processQuery(query, conversationHistory);
+    // Select agent based on mode
+    const selectedAgent = mode === 'multi-pass' ? multiPassAgent : singlePassAgent;
+    const response = await selectedAgent.processQuery(query, conversationHistory);
 
     console.log(`✅ Response generated (tool: ${response.selectedTool}, time: ${response.executionTime}ms)`);
 

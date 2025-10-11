@@ -24,6 +24,7 @@ export class AppComponent {
   messages: Message[] = [];
   userInput = '';
   allowHistory = true;  // Toggle for conversation history
+  multiPassMode = false;  // Toggle for multi-pass ReACT agent
   isLoading = false;
 
   exampleQueries = [
@@ -60,7 +61,7 @@ export class AppComponent {
             }))
         : []; // Empty array when history is disabled
 
-      const response = await this.agentService.query(message, conversationHistory);
+      const response = await this.agentService.query(message, conversationHistory, this.multiPassMode ? 'multi-pass' : 'single-pass');
       
       // Unified response structure - just get the answer!
       const content = response.result.answer || JSON.stringify(response.result, null, 2);

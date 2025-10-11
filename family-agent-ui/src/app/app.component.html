@@ -8,7 +8,11 @@
     <div class="controls">
       <label class="history-toggle">
         <input type="checkbox" [(ngModel)]="allowHistory">
-        <span>� Allow History</span>
+        <span>💬 Allow History</span>
+      </label>
+      <label class="mode-toggle">
+        <input type="checkbox" [(ngModel)]="multiPassMode">
+        <span>🔄 Multi-Pass</span>
       </label>
       <button class="clear-btn" (click)="clearChat()">🗑️ Clear</button>
     </div>
@@ -73,8 +77,10 @@
         {{ isLoading ? '⏳' : '▶️' }} Send
       </button>
     </div>
-    <div class="input-hint" *ngIf="allowHistory">
-      � Conversation history is enabled - Agent will remember context from previous messages
+    <div class="input-hint">
+      <span *ngIf="allowHistory">💬 Conversation history enabled | </span>
+      <span *ngIf="multiPassMode">🔄 Multi-Pass ReACT mode - Agent will iterate to solve complex queries</span>
+      <span *ngIf="!multiPassMode">⚡ Single-Pass mode - Fast, direct answers</span>
     </div>
   </div>
 </div>
