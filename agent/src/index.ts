@@ -70,7 +70,7 @@ async function main() {
   const hybridQuery = "Tell me an interesting fact about Maya based on her events";
   console.log(`Query: "${hybridQuery}"\n`);
   
-  const hybridResponse = await agent.processQuery(hybridQuery, true);
+  const hybridResponse = await agent.processQuery(hybridQuery);
   console.log('\n📤 HYBRID RESPONSE:');
   console.log(JSON.stringify(hybridResponse.result, null, 2));
 

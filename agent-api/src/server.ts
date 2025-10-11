@@ -58,7 +58,7 @@ app.get('/api/capabilities', (req: Request, res: Response) => {
 // Main query endpoint
 app.post('/api/query', async (req: Request, res: Response) => {
   try {
-    const { query, hybridMode = false } = req.body;
+    const { query, conversationHistory = [] } = req.body;
 
     if (!query || typeof query !== 'string') {
       return res.status(400).json({
@@ -67,9 +67,9 @@ app.post('/api/query', async (req: Request, res: Response) => {
       });
     }
 
-    console.log(`📝 Received query: "${query}" (hybrid: ${hybridMode})`);
+    console.log(`📝 Received query: "${query}" (history: ${conversationHistory.length} messages)`);
 
-    const response = await agent.processQuery(query, hybridMode);
+    const response = await agent.processQuery(query, conversationHistory);
 
     console.log(`✅ Response generated (tool: ${response.selectedTool}, time: ${response.executionTime}ms)`);
 

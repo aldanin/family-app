@@ -10,6 +10,11 @@ export interface AgentResponse {
   executionTime: number;
 }
 
+export interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -18,11 +23,11 @@ export class AgentService {
 
   constructor(private http: HttpClient) {}
 
-  async query(query: string, hybridMode: boolean = false): Promise<AgentResponse> {
+  async query(query: string, conversationHistory: ConversationMessage[] = []): Promise<AgentResponse> {
     return firstValueFrom(
       this.http.post<AgentResponse>(`${this.apiUrl}/query`, {
         query,
-        hybridMode
+        conversationHistory
       })
     );
   }

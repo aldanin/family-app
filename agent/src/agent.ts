@@ -30,7 +30,7 @@ export class FamilyAgent {
   /**
    * Process a query - this is the main entry point
    */
-  async processQuery(query: string, combineWithContext: boolean = false): Promise<AgentResponse> {
+  async processQuery(query: string, conversationHistory: Array<{role: string, content: string}> = []): Promise<AgentResponse> {
     const startTime = Date.now();
     
     console.log('\n' + '='.repeat(80));
@@ -46,7 +46,7 @@ export class FamilyAgent {
       const familyContext = await this.fetchFamilyContextIfNeeded(selection, query);
       await this.ensureRequiredParameters(selection, query, familyContext);
 
-      const result = await this.executeSelectedTool(selection, query, familyContext);
+      const result = await this.executeSelectedTool(selection, query, familyContext, conversationHistory);
       
       const executionTime = Date.now() - startTime;
       
@@ -228,7 +228,12 @@ export class FamilyAgent {
     console.log(`   → Event target confirmed: ${parameters.name}\n`);
   }
 
-  private async executeSelectedTool(selection: ToolSelectionResult, query: string, familyContext: { members?: any[], count?: number, events?: any } = {}): Promise<ToolResult> {
+  private async executeSelectedTool(
+    selection: ToolSelectionResult, 
+    query: string, 
+    familyContext: { members?: any[], count?: number, events?: any } = {},
+    conversationHistory: Array<{role: string, content: string}> = []
+  ): Promise<ToolResult> {
     switch (selection.selectedTool) {
       case 'getDPOCH':
         return this.familyClient.getDPOCH();
@@ -245,7 +250,7 @@ export class FamilyAgent {
         return this.familyClient.getFamily(selection.parameters?.name);
 
       case 'answerGeneralQuery':
-        return this.answerGenerator.answerGeneralQuery(query, familyContext);
+        return this.answerGenerator.answerGeneralQuery(query, familyContext, conversationHistory);
 
       default:
         throw new Error(`Unknown tool: ${selection.selectedTool}`);

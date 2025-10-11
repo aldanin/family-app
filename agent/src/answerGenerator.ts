@@ -25,13 +25,20 @@ export class AnswerGenerator {
   /**
    * Answer general questions using OpenAI GPT
    */
-  async answerGeneralQuery(query: string, context?: any): Promise<ToolResult> {
+  async answerGeneralQuery(
+    query: string, 
+    context?: any,
+    conversationHistory: Array<{role: string, content: string}> = []
+  ): Promise<ToolResult> {
     console.log(`🔧 [Tool: AnswerGenerator/OpenAI] Processing query: "${query}"`);
+    if (conversationHistory.length > 0) {
+      console.log(`   → With conversation history: ${conversationHistory.length} messages`);
+    }
 
     try {
       // If OpenAI is available, use it
       if (this.openai) {
-        return await this.askGPT(query, context);
+        return await this.askGPT(query, context, conversationHistory);
       }
       
       // Fallback to simple pattern matching if no API key
@@ -50,7 +57,11 @@ export class AnswerGenerator {
   /**
    * Use OpenAI GPT to answer the query
    */
-  private async askGPT(query: string, context?: any): Promise<ToolResult> {
+  private async askGPT(
+    query: string, 
+    context?: any,
+    conversationHistory: Array<{role: string, content: string}> = []
+  ): Promise<ToolResult> {
     try {
       console.log('   → Calling OpenAI API...');
       if (context) {
@@ -151,6 +162,17 @@ ${eventsList}`;
         if (context.events) {
           console.log(`   → Including ${context.events.events?.length || 0} events`);
         }
+      }
+
+      // Add conversation history for context-aware responses
+      if (conversationHistory.length > 0) {
+        console.log(`   → Including ${conversationHistory.length} previous messages for context`);
+        conversationHistory.forEach((msg) => {
+          messages.push({
+            role: msg.role as 'user' | 'assistant',
+            content: msg.content
+          });
+        });
       }
 
       messages.push({

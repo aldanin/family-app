@@ -6,9 +6,9 @@
       <p class="subtitle">Powered by OpenAI + MCP Server</p>
     </div>
     <div class="controls">
-      <label class="hybrid-toggle">
-        <input type="checkbox" [(ngModel)]="hybridMode">
-        <span>🔗 Hybrid Mode</span>
+      <label class="history-toggle">
+        <input type="checkbox" [(ngModel)]="allowHistory">
+        <span>� Allow History</span>
       </label>
       <button class="clear-btn" (click)="clearChat()">🗑️ Clear</button>
     </div>
@@ -73,8 +73,8 @@
         {{ isLoading ? '⏳' : '▶️' }} Send
       </button>
     </div>
-    <div class="input-hint" *ngIf="hybridMode">
-      🔗 Hybrid mode is ON - Agent will combine family data with AI analysis
+    <div class="input-hint" *ngIf="allowHistory">
+      � Conversation history is enabled - Agent will remember context from previous messages
     </div>
   </div>
 </div>

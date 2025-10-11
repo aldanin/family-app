@@ -23,7 +23,7 @@ interface Message {
 export class AppComponent {
   messages: Message[] = [];
   userInput = '';
-  hybridMode = false;
+  allowHistory = true;  // Toggle for conversation history
   isLoading = false;
 
   exampleQueries = [
@@ -50,7 +50,17 @@ export class AppComponent {
     this.isLoading = true;
 
     try {
-      const response = await this.agentService.query(message, this.hybridMode);
+      // Build conversation history only if enabled (last 10 messages to avoid token overflow)
+      const conversationHistory = this.allowHistory
+        ? this.messages
+            .slice(-10) // Keep last 10 messages
+            .map(msg => ({
+              role: msg.role,
+              content: msg.content
+            }))
+        : []; // Empty array when history is disabled
+
+      const response = await this.agentService.query(message, conversationHistory);
       
       // Unified response structure - just get the answer!
       const content = response.result.answer || JSON.stringify(response.result, null, 2);

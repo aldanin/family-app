@@ -34,26 +34,16 @@ async function runInteractive() {
   console.log('  • "What is DPOCH?"');
   console.log('  • "Show Maya\'s events"');
   console.log('  • "Explain artificial intelligence"');
-  console.log('  • "Tell me about Maya\'s achievements" (hybrid!)');
-  console.log('\nType "exit" to quit, "hybrid" to toggle hybrid mode\n');
-
-  let hybridMode = false;
+  console.log('  • "Tell me about Maya\'s achievements"');
+  console.log('\nType "exit" to quit\n');
 
   const askQuestion = () => {
-    const prefix = hybridMode ? '[HYBRID] ' : '';
-    rl.question(`${prefix}You: `, async (query) => {
+    rl.question('You: ', async (query) => {
       query = query.trim();
 
       if (query.toLowerCase() === 'exit') {
         console.log('\nGoodbye! 👋\n');
         rl.close();
-        return;
-      }
-
-      if (query.toLowerCase() === 'hybrid') {
-        hybridMode = !hybridMode;
-        console.log(`\n🔀 Hybrid mode: ${hybridMode ? 'ON' : 'OFF'}\n`);
-        askQuestion();
         return;
       }
 
@@ -63,7 +53,7 @@ async function runInteractive() {
       }
 
       try {
-        const response = await agent.processQuery(query, hybridMode);
+        const response = await agent.processQuery(query);
         
         console.log('\n' + '─'.repeat(60));
         console.log('🤖 Agent:');
