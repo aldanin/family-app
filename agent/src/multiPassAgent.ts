@@ -1,4 +1,4 @@
-I. /**
+/**
  * Multi-Pass ReACT Agent
  * 
  * Uses the ReACT pattern (Reasoning + Acting) for iterative problem solving:
