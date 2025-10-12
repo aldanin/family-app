@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { AgentMode } from '../agent-mode.enum';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 
@@ -35,7 +36,7 @@ export class AgentService {
 
   constructor(private http: HttpClient) {}
 
-  async query(query: string, conversationHistory: ConversationMessage[] = [], mode: 'single-pass' | 'multi-pass' = 'single-pass'): Promise<AgentResponse> {
+  public async query(query: string, conversationHistory: ConversationMessage[] = [], mode: AgentMode = AgentMode.SinglePass): Promise<AgentResponse> {
     return firstValueFrom(
       this.http.post<AgentResponse>(`${this.apiUrl}/query`, {
         query,
@@ -48,10 +49,10 @@ export class AgentService {
   /**
    * Stream query with real-time iteration updates (for multi-pass mode)
    */
-  async queryStream(
+  public async queryStream(
     query: string, 
     conversationHistory: ConversationMessage[] = [], 
-    mode: 'single-pass' | 'multi-pass' = 'single-pass',
+    mode: AgentMode = AgentMode.SinglePass,
     onIteration: (iteration: AgentIteration) => void
   ): Promise<AgentResponse> {
     return new Promise((resolve, reject) => {
@@ -112,17 +113,5 @@ export class AgentService {
         }
       }).catch(reject);
     });
-  }
-
-  async getCapabilities() {
-    return firstValueFrom(
-      this.http.get(`${this.apiUrl}/capabilities`)
-    );
-  }
-
-  async getExamples() {
-    return firstValueFrom(
-      this.http.get(`${this.apiUrl}/examples`)
-    );
   }
 }
