@@ -94,29 +94,33 @@ Keep answers concise, friendly, and ACCURATE.`
         }
       ];
 
-      // Add context if available (e.g., family data from MCP server)
-      if (context && context.members) {
-        // Dynamically format member data based on actual fields (schema-agnostic)
-        const membersList = context.members.map((m: any) => {
-          // Convert object to readable format, excluding technical fields
-          const excludeFields = ['birth_epoch', 'member_id', 'id'];
-          const entries = Object.entries(m)
-            .filter(([key]) => !excludeFields.includes(key))
-            .map(([key, value]) => {
-              // Format field names nicely (e.g., father_name -> father)
-              const displayKey = key.replace(/_name$/, '').replace(/_/g, ' ');
-              return `${displayKey}: ${value}`;
-            });
+      // Add context if available (e.g., family data from MCP server OR embeddings)
+      if (context && (context.members || context.embeddings)) {
+        let contextMessage = '';
+
+        // Add family members if available
+        if (context.members && Array.isArray(context.members) && context.members.length > 0) {
+          // Dynamically format member data based on actual fields (schema-agnostic)
+          const membersList = context.members.map((m: any) => {
+            // Convert object to readable format, excluding technical fields
+            const excludeFields = ['birth_epoch', 'member_id', 'id'];
+            const entries = Object.entries(m)
+              .filter(([key]) => !excludeFields.includes(key))
+              .map(([key, value]) => {
+                // Format field names nicely (e.g., father_name -> father)
+                const displayKey = key.replace(/_name$/, '').replace(/_/g, ' ');
+                return `${displayKey}: ${value}`;
+              });
+            
+            return `- ${entries.join(', ')}`;
+          }).join('\n');
           
-          return `- ${entries.join(', ')}`;
-        }).join('\n');
-        
-        console.log('   → Formatted member data (schema-agnostic):\n', membersList.substring(0, 300) + '...');
-        
-        let contextMessage = `FAMILY DATABASE (USE THIS EXACT DATA):
+          console.log('   → Formatted member data (schema-agnostic):\n', membersList.substring(0, 300) + '...');
+          
+          contextMessage = `FAMILY DATABASE (USE THIS EXACT DATA):
 
 ${membersList}`;
-
+        }
         // Add events if available (schema-agnostic)
         if (context.events && context.events.events) {
           const eventsList = context.events.events.map((e: any) => {
@@ -148,26 +152,36 @@ ${eventsList}`;
           console.log('   → Including events (schema-agnostic)');
         }
 
-        contextMessage += `\n\nIMPORTANT: 
+        // Add guidance based on what context is available
+        if (contextMessage) {
+          contextMessage += `\n\nIMPORTANT: 
 - For FAMILY data (people, birthdates, relationships, family events) → use ONLY the exact information from the database above
 - For GENERAL KNOWLEDGE (world events, history, science, etc.) → use your training data
 - If the question combines both → use database for family info + your knowledge for general info`;
+        }
 
         // Add semantic memory embeddings if available
         if (context.embeddings && Array.isArray(context.embeddings) && context.embeddings.length > 0) {
-          contextMessage += `\n\nSEMANTIC MEMORY (relevant historical/biographical information):
+          if (contextMessage) {
+            contextMessage += '\n\n';
+          }
+          contextMessage += `SEMANTIC MEMORY (relevant historical/biographical information):
 ${context.embeddings.map((text: string, i: number) => `${i + 1}. ${text}`).join('\n')}
 
 Use this information to provide rich, detailed answers about historical figures and events.`;
           console.log(`   → Including ${context.embeddings.length} semantic memory embeddings`);
         }
         
-        messages.push({
-          role: 'system',
-          content: contextMessage
-        });
+        if (contextMessage) {
+          messages.push({
+            role: 'system',
+            content: contextMessage
+          });
+        }
         
-        console.log('   → Sending family data to GPT (schema-agnostic formatting)');
+        if (context.members) {
+          console.log('   → Sending family data to GPT (schema-agnostic formatting)');
+        }
         if (context.events) {
           console.log(`   → Including ${context.events.events?.length || 0} events`);
         }

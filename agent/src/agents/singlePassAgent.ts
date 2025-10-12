@@ -47,9 +47,11 @@ export class SinglePassAgent {
       const familyContext = await this.fetchFamilyContextIfNeeded(selection, query);
       await this.ensureRequiredParameters(selection, query, familyContext);
 
-      // If answering with GPT, add top-3 similar embeddings to context and metadata
+      // ALWAYS search semantic embeddings when using GPT
+      // The embeddings contain family history (Ezra Danin, etc.) which supplements the database
       let embeddingResults: any[] = [];
       if (selection.selectedTool === 'answerGeneralQuery' && this.embeddingStore) {
+        console.log('🔍 SEARCHING SEMANTIC MEMORY (family history embeddings)...');
         // Generate real embedding for the query
         const queryEmbedding = await this.answerGenerator.generateEmbedding(query);
         if (queryEmbedding) {
@@ -57,13 +59,16 @@ export class SinglePassAgent {
           console.log(`   ✓ Found ${embeddingResults.length} similar embeddings`);
           if (embeddingResults.length > 0) {
             console.log(`   → Top match: "${embeddingResults[0].text.substring(0, 60)}..." (similarity: ${embeddingResults[0].similarity.toFixed(3)})`);
-          }
-          if (familyContext) {
+            // Add embeddings to context (create familyContext if it doesn't exist)
+            if (!familyContext.embeddings) {
+              familyContext.embeddings = [];
+            }
             familyContext.embeddings = embeddingResults.map(e => e.text);
           }
         } else {
           console.warn('   ⚠️  Could not generate query embedding, skipping semantic search');
         }
+        console.log('');
       }
 
       const result = await this.executeSelectedTool(selection, query, familyContext, conversationHistory);
