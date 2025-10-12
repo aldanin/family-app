@@ -56,6 +56,7 @@ export interface UnifiedResult {
     eventCount?: number;
     personName?: string;
     memberCount?: number;
+    embeddingResults?: any[];
   };
 }
 

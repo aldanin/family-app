@@ -1,6 +1,7 @@
 import { FamilyMCPClient } from '../familyMCPClient';
 import { AnswerGenerator } from '../answerGenerator';
 import { AgentIteration, AgentState, MultiPassAgentResponse } from '../types';
+import { EmbeddingStore } from '../embeddingStore';
 
 type AgentAction = 'getFamily' | 'getEvents' | 'FINISH';
 
@@ -30,6 +31,7 @@ const EVENT_KEYWORDS = [
 export class MultiPassAgent {
   private mcpClient: FamilyMCPClient;
   private answerGenerator: AnswerGenerator;
+  private embeddingStore: EmbeddingStore;
   private maxIterations: number;
   private onIterationCallback?: (iteration: AgentIteration) => void;
 
@@ -37,10 +39,12 @@ export class MultiPassAgent {
     mcpServerUrl: string,
     openaiApiKey?: string,
     openaiModel: string = 'gpt-4o-mini',
-    maxIterations: number = 5
+    maxIterations: number = 5,
+  embeddingPath?: string
   ) {
     this.mcpClient = new FamilyMCPClient(mcpServerUrl);
     this.answerGenerator = new AnswerGenerator(openaiApiKey, openaiModel);
+    this.embeddingStore = new EmbeddingStore(embeddingPath);
     this.maxIterations = maxIterations;
   }
 
@@ -95,6 +99,16 @@ export class MultiPassAgent {
       state.isComplete = true;
     }
 
+    // Sample: Use embeddingStore to find top-3 similar embeddings for the query
+    let embeddingResults: any[] = [];
+    if (this.embeddingStore && typeof this.embeddingStore.getAll === 'function') {
+      // For demo, fake embedding for query as zeros (replace with real embedding in production)
+      const dummyEmbedding = Array.isArray(this.embeddingStore.getAll()[0]?.embedding)
+        ? new Array(this.embeddingStore.getAll()[0].embedding.length).fill(0)
+        : [];
+      embeddingResults = this.embeddingStore.findMostSimilar(dummyEmbedding, 3);
+    }
+
     return {
       query: state.query,
       selectedTool: 'MultiPassAgent',
@@ -102,7 +116,8 @@ export class MultiPassAgent {
       result: {
         answer: state.finalAnswer || 'No answer generated',
         metadata: {
-          toolName: 'MultiPassAgent'
+          toolName: 'MultiPassAgent',
+          embeddingResults: embeddingResults // custom property for demo
         }
       },
       executionTime: 0,
@@ -187,9 +202,24 @@ export class MultiPassAgent {
           }
 
           const result = await this.mcpClient.getEvents(name);
+
+          if (!result.success) {
+            plan.fetchedEventNames.add(name);
+
+            const spouseName = this.findSpouseName(name, state.workingMemory);
+            if (spouseName && !plan.referencedNames.has(spouseName)) {
+              plan.referencedNames.add(spouseName);
+              return `${result.data?.answer || `No events found for ${name}.`} I'll check ${spouseName}'s timeline next.`;
+            }
+
+            return result.data?.answer || `No events found for ${name}.`;
+          }
+
           const events = Array.isArray(result.data?.events) ? result.data.events : [];
           state.workingMemory.set(`events_${name}`, events);
           plan.fetchedEventNames.add(name);
+
+          const mirroredNames = this.mirrorEventsForSpouses(name, events, plan, state.workingMemory);
 
           if (events.length === 0) {
             return `No events found for ${name}.`;
@@ -199,7 +229,11 @@ export class MultiPassAgent {
             .map((event: any) => `${event.type || event.event_type} on ${event.date || event.event_date}`)
             .join(', ');
 
-          return `Fetched ${events.length} event(s) for ${name}: ${summary}`;
+          const mirrorNote = mirroredNames.length > 0
+            ? ` Also mirrored these events for ${mirroredNames.join(', ')}.`
+            : '';
+
+          return `Fetched ${events.length} event(s) for ${name}: ${summary}.${mirrorNote}`;
         }
 
         case 'FINISH':
@@ -258,6 +292,87 @@ export class MultiPassAgent {
         }
       }
     }
+  }
+
+  private findSpouseName(name: string, memory: Map<string, any>): string | null {
+    const members = memory.get('familyMembers');
+    if (!Array.isArray(members) || members.length === 0) {
+      return null;
+    }
+
+    const normalizedTarget = name.trim().toLowerCase();
+
+    for (const member of members) {
+      const memberName = String(member.name || '').trim().toLowerCase();
+      if (!memberName) {
+        continue;
+      }
+
+      if (memberName === normalizedTarget) {
+        const spouse = this.extractSpouseName(member);
+        if (spouse) {
+          return spouse;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private extractSpouseName(member: any): string | null {
+    if (!member) {
+      return null;
+    }
+
+    const rawSpouse = member.spouse ?? member.spouse_name ?? member.partner ?? member.partner_name;
+
+    if (typeof rawSpouse === 'string') {
+      const normalized = rawSpouse.trim();
+      return normalized.length > 0 ? normalized : null;
+    }
+
+    if (Array.isArray(rawSpouse) && rawSpouse.length > 0) {
+      const first = String(rawSpouse[0] ?? '').trim();
+      return first.length > 0 ? first : null;
+    }
+
+    return null;
+  }
+
+  private mirrorEventsForSpouses(
+    name: string,
+    events: any[],
+    plan: QueryPlan,
+    memory: Map<string, any>
+  ): string[] {
+    const mirrored: string[] = [];
+    const members = memory.get('familyMembers');
+
+    if (!Array.isArray(members) || members.length === 0) {
+      return mirrored;
+    }
+
+    const normalizedTarget = name.trim().toLowerCase();
+
+    members.forEach((member: any) => {
+      const memberName = String(member.name || '').trim();
+      if (!memberName) {
+        return;
+      }
+
+      const spouseName = this.extractSpouseName(member);
+      if (!spouseName) {
+        return;
+      }
+
+      if (spouseName.trim().toLowerCase() === normalizedTarget && memberName.trim().toLowerCase() !== normalizedTarget) {
+        memory.set(`events_${memberName}`, events);
+        plan.fetchedEventNames.add(memberName);
+        mirrored.push(memberName);
+      }
+    });
+
+    return mirrored;
   }
 
   private async generateFinalAnswer(state: AgentState): Promise<string> {
