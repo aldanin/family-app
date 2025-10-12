@@ -55,6 +55,21 @@ export class MultiPassAgent {
   async processQuery(query: string, conversationHistory: any[] = []): Promise<MultiPassAgentResponse> {
     const plan = this.createQueryPlan(query);
 
+    // Generate embeddings early so we can use them in the final answer
+    let embeddingResults: any[] = [];
+    if (this.embeddingStore && typeof this.embeddingStore.getAll === 'function') {
+      const queryEmbedding = await this.answerGenerator.generateEmbedding(query);
+      if (queryEmbedding) {
+        embeddingResults = this.embeddingStore.findMostSimilar(queryEmbedding, 3);
+        console.log(`   ✓ Found ${embeddingResults.length} similar embeddings for multi-pass agent`);
+        if (embeddingResults.length > 0) {
+          console.log(`   → Top match: "${embeddingResults[0].text.substring(0, 60)}..." (similarity: ${embeddingResults[0].similarity.toFixed(3)})`);
+        }
+      } else {
+        console.warn('   ⚠️  Could not generate query embedding for multi-pass agent');
+      }
+    }
+
     const state: AgentState = {
       query,
       conversationHistory,
@@ -65,6 +80,11 @@ export class MultiPassAgent {
       maxIterations: this.maxIterations,
       currentIteration: 0
     };
+
+    // Store embeddings in working memory so they can be used in final answer
+    if (embeddingResults.length > 0) {
+      state.workingMemory.set('embeddings', embeddingResults.map(e => e.text));
+    }
 
     while (!state.isComplete && state.currentIteration < state.maxIterations) {
       state.currentIteration++;
@@ -99,25 +119,15 @@ export class MultiPassAgent {
       state.isComplete = true;
     }
 
-    // Sample: Use embeddingStore to find top-3 similar embeddings for the query
-    let embeddingResults: any[] = [];
-    if (this.embeddingStore && typeof this.embeddingStore.getAll === 'function') {
-      // For demo, fake embedding for query as zeros (replace with real embedding in production)
-      const dummyEmbedding = Array.isArray(this.embeddingStore.getAll()[0]?.embedding)
-        ? new Array(this.embeddingStore.getAll()[0].embedding.length).fill(0)
-        : [];
-      embeddingResults = this.embeddingStore.findMostSimilar(dummyEmbedding, 3);
-    }
-
     return {
       query: state.query,
       selectedTool: 'MultiPassAgent',
-      reasoning: state.iterations.map((i) => i.thought).join(' ? '),
+      reasoning: state.iterations.map((i) => i.thought).join(' → '),
       result: {
         answer: state.finalAnswer || 'No answer generated',
         metadata: {
           toolName: 'MultiPassAgent',
-          embeddingResults: embeddingResults // custom property for demo
+          embeddingResults: embeddingResults
         }
       },
       executionTime: 0,
@@ -390,6 +400,11 @@ export class MultiPassAgent {
     }
     if (allEvents.length > 0) {
       context.events = { events: allEvents };
+    }
+
+    // Add embeddings to context if available
+    if (state.workingMemory.has('embeddings')) {
+      context.embeddings = state.workingMemory.get('embeddings');
     }
 
     const result = await this.answerGenerator.answerGeneralQuery(

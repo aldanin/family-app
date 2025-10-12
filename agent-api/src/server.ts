@@ -6,6 +6,7 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
 import { SinglePassAgent } from '../../agent/dist/agents/singlePassAgent';
 import { MultiPassAgent } from '../../agent/dist/agents/multiPassAgent';
 
@@ -24,9 +25,12 @@ const mcpServerUrl = process.env.MCP_SERVER_URL || 'http://localhost:6402';
 const openaiApiKey = process.env.OPENAI_API_KEY;
 const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
-// Create both agent types
-const singlePassAgent = new SinglePassAgent(mcpServerUrl, openaiApiKey, openaiModel);
-const multiPassAgent = new MultiPassAgent(mcpServerUrl, openaiApiKey, openaiModel, 5);
+// Embeddings path - use absolute path to avoid issues with compiled dist/ folder
+const embeddingsPath = path.join(__dirname, '../../agent/assets/danin-embeddings.json');
+
+// Create both agent types with embeddings path
+const singlePassAgent = new SinglePassAgent(mcpServerUrl, openaiApiKey, openaiModel, embeddingsPath);
+const multiPassAgent = new MultiPassAgent(mcpServerUrl, openaiApiKey, openaiModel, 5, embeddingsPath);
 
 console.log('🤖 Family AI Agent API Server');
 console.log('================================');

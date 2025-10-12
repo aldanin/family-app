@@ -152,6 +152,15 @@ ${eventsList}`;
 - For FAMILY data (people, birthdates, relationships, family events) → use ONLY the exact information from the database above
 - For GENERAL KNOWLEDGE (world events, history, science, etc.) → use your training data
 - If the question combines both → use database for family info + your knowledge for general info`;
+
+        // Add semantic memory embeddings if available
+        if (context.embeddings && Array.isArray(context.embeddings) && context.embeddings.length > 0) {
+          contextMessage += `\n\nSEMANTIC MEMORY (relevant historical/biographical information):
+${context.embeddings.map((text: string, i: number) => `${i + 1}. ${text}`).join('\n')}
+
+Use this information to provide rich, detailed answers about historical figures and events.`;
+          console.log(`   → Including ${context.embeddings.length} semantic memory embeddings`);
+        }
         
         messages.push({
           role: 'system',
@@ -307,6 +316,31 @@ ${eventsList}`;
       data: { answer, timestamp: now.toISOString() },
       reasoning: 'Provided current date/time information'
     };
+  }
+
+  /**
+   * Generate embedding vector for a text query using OpenAI's embedding API
+   */
+  async generateEmbedding(text: string): Promise<number[] | null> {
+    if (!this.openai) {
+      console.warn('⚠️  Cannot generate embedding: OpenAI not initialized');
+      return null;
+    }
+
+    try {
+      console.log(`   → Generating embedding for query: "${text.substring(0, 50)}..."`);
+      const response = await this.openai.embeddings.create({
+        model: 'text-embedding-3-small',
+        input: text,
+      });
+
+      const embedding = response.data[0].embedding;
+      console.log(`   ✓ Generated embedding vector (${embedding.length} dimensions)`);
+      return embedding;
+    } catch (error) {
+      console.error('   ✗ Failed to generate embedding:', error);
+      return null;
+    }
   }
 
   getAvailableTools() {

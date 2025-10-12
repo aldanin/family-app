@@ -10,17 +10,21 @@ export type EmbeddingEntry = {
 export class EmbeddingStore {
   private embeddings: EmbeddingEntry[] = [];
 
-  constructor(assetPath: string = path.join(__dirname, '../../assets/danin-embeddings.json')) {
-    this.loadEmbeddings(assetPath);
+  constructor(assetPath?: string) {
+    // Default path works from both src/ and dist/ folders
+    const defaultPath = assetPath || path.join(__dirname, '../../assets/danin-embeddings.json');
+    this.loadEmbeddings(defaultPath);
   }
 
   private loadEmbeddings(assetPath: string) {
     try {
-      const raw = fs.readFileSync(assetPath, 'utf8');
+      const resolvedPath = path.resolve(assetPath);
+      console.log(`📂 Attempting to load embeddings from: ${resolvedPath}`);
+      const raw = fs.readFileSync(resolvedPath, 'utf8');
       this.embeddings = JSON.parse(raw);
-      console.log(`✅ Loaded ${this.embeddings.length} embeddings from ${assetPath}`);
+      console.log(`✅ Loaded ${this.embeddings.length} embeddings successfully`);
     } catch (err) {
-      console.warn(`⚠️ Could not load embeddings from ${assetPath}:`, err);
+      console.error(`❌ Could not load embeddings from ${assetPath}:`, err instanceof Error ? err.message : err);
       this.embeddings = [];
     }
   }

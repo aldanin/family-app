@@ -7,22 +7,23 @@ import { FamilyMCPClient } from '../familyMCPClient';
 import { AnswerGenerator } from '../answerGenerator';
 import { ToolSelector, ToolSelectionResult } from '../toolSelector';
 import { AgentQuery, AgentResponse, ToolDefinition, UnifiedResult, ToolResult } from '../types';
+import { EmbeddingStore } from '../embeddingStore';
 
 export class SinglePassAgent {
   private familyClient: FamilyMCPClient;
   private answerGenerator: AnswerGenerator;
   private toolSelector: ToolSelector;
+  private embeddingStore: EmbeddingStore;
 
-  constructor(mcpServerUrl?: string, openaiApiKey?: string, openaiModel?: string) {
+  constructor(mcpServerUrl?: string, openaiApiKey?: string, openaiModel?: string, embeddingPath?: string) {
     this.familyClient = new FamilyMCPClient(mcpServerUrl);
     this.answerGenerator = new AnswerGenerator(openaiApiKey, openaiModel);
-    
+    this.embeddingStore = new EmbeddingStore(embeddingPath);
     // Gather all available tools
     const allTools: ToolDefinition[] = [
       ...this.familyClient.getAvailableTools(),
       ...this.answerGenerator.getAvailableTools()
     ];
-    
     // Pass OpenAI key to tool selector for LLM-based selection!
     this.toolSelector = new ToolSelector(allTools, openaiApiKey);
   }
@@ -46,18 +47,41 @@ export class SinglePassAgent {
       const familyContext = await this.fetchFamilyContextIfNeeded(selection, query);
       await this.ensureRequiredParameters(selection, query, familyContext);
 
+      // If answering with GPT, add top-3 similar embeddings to context and metadata
+      let embeddingResults: any[] = [];
+      if (selection.selectedTool === 'answerGeneralQuery' && this.embeddingStore) {
+        // Generate real embedding for the query
+        const queryEmbedding = await this.answerGenerator.generateEmbedding(query);
+        if (queryEmbedding) {
+          embeddingResults = this.embeddingStore.findMostSimilar(queryEmbedding, 3);
+          console.log(`   ✓ Found ${embeddingResults.length} similar embeddings`);
+          if (embeddingResults.length > 0) {
+            console.log(`   → Top match: "${embeddingResults[0].text.substring(0, 60)}..." (similarity: ${embeddingResults[0].similarity.toFixed(3)})`);
+          }
+          if (familyContext) {
+            familyContext.embeddings = embeddingResults.map(e => e.text);
+          }
+        } else {
+          console.warn('   ⚠️  Could not generate query embedding, skipping semantic search');
+        }
+      }
+
       const result = await this.executeSelectedTool(selection, query, familyContext, conversationHistory);
-      
+
       const executionTime = Date.now() - startTime;
-      
+
       console.log('✅ TOOL EXECUTION COMPLETED');
       console.log(`   Success: ${result.success}`);
       console.log(`   Execution Time: ${executionTime}ms`);
       console.log('');
-      
+
       // Normalize the result into unified format
       const unifiedResult = this.normalizeResult(result, selection.selectedTool);
-      
+      // Attach embedding results to metadata
+      if (embeddingResults.length && unifiedResult.metadata) {
+        unifiedResult.metadata.embeddingResults = embeddingResults;
+      }
+
       const response: AgentResponse = {
         query,
         selectedTool: selection.selectedTool,
@@ -65,13 +89,13 @@ export class SinglePassAgent {
         result: unifiedResult,
         executionTime
       };
-      
+
       console.log('='.repeat(80));
       console.log('✨ AGENT EXECUTION FINISHED');
       console.log('='.repeat(80) + '\n');
-      
+
       return response;
-      
+
     } catch (error) {
       const executionTime = Date.now() - startTime;
       
@@ -107,7 +131,7 @@ export class SinglePassAgent {
   }
 
   private async fetchFamilyContextIfNeeded(selection: ToolSelectionResult, query: string) {
-    const familyContext: { members?: any[], count?: number, events?: any } = {};
+    const familyContext: { members?: any[], count?: number, events?: any, embeddings?: string[] } = {};
 
     if (selection.selectedTool !== 'answerGeneralQuery' || !selection.parameters?.needsFamilyContext) {
       if (selection.selectedTool === 'answerGeneralQuery') {
@@ -231,7 +255,7 @@ export class SinglePassAgent {
   private async executeSelectedTool(
     selection: ToolSelectionResult, 
     query: string, 
-    familyContext: { members?: any[], count?: number, events?: any } = {},
+    familyContext: { members?: any[], count?: number, events?: any, embeddings?: string[] } = {},
     conversationHistory: Array<{role: string, content: string}> = []
   ): Promise<ToolResult> {
     switch (selection.selectedTool) {
