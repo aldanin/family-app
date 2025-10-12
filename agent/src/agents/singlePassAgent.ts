@@ -1,14 +1,14 @@
 /**
- * Main Agent Class
- * Orchestrates tool selection and execution
+ * Single-Pass Agent Class
+ * Orchestrates tool selection and execution in a single decision
  */
 
-import { FamilyMCPClient } from './familyMCPClient';
-import { AnswerGenerator } from './answerGenerator';
-import { ToolSelector, ToolSelectionResult } from './toolSelector';
-import { AgentQuery, AgentResponse, ToolDefinition, UnifiedResult, ToolResult } from './types';
+import { FamilyMCPClient } from '../familyMCPClient';
+import { AnswerGenerator } from '../answerGenerator';
+import { ToolSelector, ToolSelectionResult } from '../toolSelector';
+import { AgentQuery, AgentResponse, ToolDefinition, UnifiedResult, ToolResult } from '../types';
 
-export class FamilyAgent {
+export class SinglePassAgent {
   private familyClient: FamilyMCPClient;
   private answerGenerator: AnswerGenerator;
   private toolSelector: ToolSelector;

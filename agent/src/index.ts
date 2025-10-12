@@ -4,7 +4,7 @@
  */
 
 import './config'; // Load environment variables
-import { FamilyAgent } from './agent';
+import { SinglePassAgent } from './agents/singlePassAgent';
 
 async function main() {
   console.log('\n');
@@ -25,7 +25,7 @@ async function main() {
   const openaiApiKey = process.env.OPENAI_API_KEY;
   const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
   
-  const agent = new FamilyAgent(mcpServerUrl, openaiApiKey, openaiModel);
+  const agent = new SinglePassAgent(mcpServerUrl, openaiApiKey, openaiModel);
 
   // Show capabilities
   console.log('📋 AGENT CAPABILITIES:\n');

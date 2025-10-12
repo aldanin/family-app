@@ -56,62 +56,76 @@ export class AgentService {
     onIteration: (iteration: AgentIteration) => void
   ): Promise<AgentResponse> {
     return new Promise((resolve, reject) => {
-      const eventSource = new EventSource(
-        `${this.apiUrl}/query/stream?` + new URLSearchParams({
-          query,
-          conversationHistory: JSON.stringify(conversationHistory),
-          mode
-        })
-      );
-
-      // Note: EventSource only supports GET, so we need to adjust the backend
-      // For now, use fetch with POST for SSE
-      
-      fetch(`${this.apiUrl}/query/stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, conversationHistory, mode })
-      }).then(async response => {
-        const reader = response.body?.getReader();
-        const decoder = new TextDecoder();
-
-        if (!reader) {
-          reject(new Error('No response body'));
-          return;
-        }
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\n');
-
-          for (const line of lines) {
-            // Skip empty lines
-            if (!line || !line.trim()) continue;
-            
-            if (line.startsWith('data: ')) {
-              try {
-                const jsonString = line.substring(6);
-                console.log('Parsing SSE data:', jsonString);
-                const data = JSON.parse(jsonString);
-                
-                if (data.type === 'iteration') {
-                  console.log('Iteration received:', data.data);
-                  onIteration(data.data);
-                } else if (data.type === 'complete') {
-                  resolve(data.data);
-                } else if (data.type === 'error') {
-                  reject(new Error(data.error));
-                }
-              } catch (parseError) {
-                console.warn('Failed to parse SSE data:', line, parseError);
-              }
-            }
-          }
-        }
-      }).catch(reject);
+      this.streamAgentResponse(query, conversationHistory, mode, onIteration, resolve, reject);
     });
+  }
+
+  private async streamAgentResponse(
+    query: string,
+    conversationHistory: ConversationMessage[],
+    mode: AgentMode,
+    onIteration: (iteration: AgentIteration) => void,
+    resolve: (value: AgentResponse) => void,
+    reject: (reason?: any) => void
+  ) {
+    fetch(`${this.apiUrl}/query/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, conversationHistory, mode })
+    }).then(async response => {
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        reject(new Error('No response body'));
+        return;
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+        this.processSseLines(lines, onIteration, resolve, reject);
+      }
+    }).catch(reject);
+  }
+
+  private processSseLines(
+    lines: string[],
+    onIteration: (iteration: AgentIteration) => void,
+    resolve: (value: AgentResponse) => void,
+    reject: (reason?: any) => void
+  ) {
+    for (const line of lines) {
+      if (!line || !line.trim()) continue;
+      if (line.startsWith('data: ')) {
+        this.handleSseData(line.substring(6), onIteration, resolve, reject, line);
+      }
+    }
+  }
+
+  private handleSseData(
+    jsonString: string,
+    onIteration: (iteration: AgentIteration) => void,
+    resolve: (value: AgentResponse) => void,
+    reject: (reason?: any) => void,
+    rawLine?: string
+  ) {
+    try {
+      console.log('Parsing SSE data:', jsonString);
+      const data = JSON.parse(jsonString);
+      if (data.type === 'iteration') {
+        console.log('Iteration received:', data.data);
+        onIteration(data.data);
+      } else if (data.type === 'complete') {
+        resolve(data.data);
+      } else if (data.type === 'error') {
+        reject(new Error(data.error));
+      }
+    } catch (parseError) {
+      console.warn('Failed to parse SSE data:', rawLine || jsonString, parseError);
+    }
   }
 }

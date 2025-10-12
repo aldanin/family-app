@@ -18,14 +18,14 @@
  */
 
 import OpenAI from 'openai';
-import { FamilyMCPClient } from './familyMCPClient';
-import { AnswerGenerator } from './answerGenerator';
-import { 
-  AgentState, 
-  AgentIteration, 
+import { FamilyMCPClient } from '../familyMCPClient';
+import { AnswerGenerator } from '../answerGenerator';
+import {
+  AgentState,
+  AgentIteration,
   MultiPassAgentResponse,
-  ToolResult 
-} from './types';
+  ToolResult
+} from '../types';
 
 export class MultiPassAgent {
   private mcpClient: FamilyMCPClient;
@@ -66,10 +66,10 @@ export class MultiPassAgent {
    */
   async processQuery(
     query: string,
-    conversationHistory: Array<{role: string, content: string}> = []
+    conversationHistory: Array<{ role: string, content: string }> = []
   ): Promise<MultiPassAgentResponse> {
     const startTime = Date.now();
-    
+
     console.log('\n' + '═'.repeat(80));
     console.log('🔄 MULTI-PASS REACT AGENT');
     console.log('═'.repeat(80));
@@ -92,24 +92,24 @@ export class MultiPassAgent {
     // ReACT Loop
     while (!state.isComplete && state.currentIteration < state.maxIterations) {
       state.currentIteration++;
-      
+
       console.log(`\n┌─ ITERATION ${state.currentIteration}/${state.maxIterations} ─────────────────────────────────────────┐`);
-      
+
       // Step 1: THOUGHT - Agent reasons about what to do
       const thought = await this.think(state);
       console.log(`│ 💭 THOUGHT: ${thought.substring(0, 70)}...`);
-      
+
       // Step 2: ACTION - Agent decides which tool to use
       const action = await this.selectAction(state, thought);
       console.log(`│ 🎯 ACTION: ${action.action}`);
       if (action.actionInput) {
         console.log(`│ 📋 INPUT: ${JSON.stringify(action.actionInput)}`);
       }
-      
+
       // Step 3: OBSERVATION - Execute the action
       const observation = await this.executeAction(action.action, action.actionInput, state);
       console.log(`│ 👁️  OBSERVATION: ${observation.substring(0, 60)}...`);
-      
+
       // Record this iteration
       const iteration: AgentIteration = {
         iterationNumber: state.currentIteration,
@@ -120,19 +120,19 @@ export class MultiPassAgent {
         timestamp: new Date()
       };
       state.iterations.push(iteration);
-      
+
       // Emit iteration update if callback is set (for streaming)
       if (this.onIterationCallback) {
         this.onIterationCallback(iteration);
       }
-      
+
       // Check if agent decided to finish
       if (action.action === 'FINISH') {
         state.isComplete = true;
         state.finalAnswer = observation;
         console.log(`│ ✅ STATUS: COMPLETE`);
       }
-      
+
       console.log(`└────────────────────────────────────────────────────────────┘`);
     }
 
@@ -143,7 +143,7 @@ export class MultiPassAgent {
     }
 
     const executionTime = Date.now() - startTime;
-    
+
     console.log('\n' + '═'.repeat(80));
     console.log(`✅ COMPLETE - ${state.iterations.length} iterations in ${executionTime}ms`);
     console.log('═'.repeat(80) + '\n');
@@ -180,39 +180,39 @@ export class MultiPassAgent {
         role: 'system',
         content: `You are a reasoning agent. Analyze the current state and think about what to do next.
 
-Your goal: Answer the user's query EFFICIENTLY by gathering ONLY necessary information.
+                  Your goal: Answer the user's query EFFICIENTLY by gathering ONLY necessary information.
 
-Available tools:
-- getFamily: Get family member data (name, birthdate, role, etc.)
-- getEvents: Get events for a specific person
-- getDPOCH: Get the oldest birthdate epoch (ONLY use when query explicitly asks about DPOCH or relative time calculations)
-- FINISH: When you have all info needed to answer
+                  Available tools:
+                  - getFamily: Get family member data (name, birthdate, role, etc.)
+                  - getEvents: Get events for a specific person
+                  - getDPOCH: Get the oldest birthdate epoch (ONLY use when query explicitly asks about DPOCH or relative time calculations)
+                  - FINISH: When you have all info needed to answer
 
-IMPORTANT EFFICIENCY RULES:
-1. For simple factual queries (e.g., "when was X born", "who is X"), use ONLY getFamily
-2. ONLY use getDPOCH if the query explicitly mentions DPOCH or asks "how long after DPOCH"
-3. ONLY use getEvents if the query asks about events, achievements, or timeline
-4. If you already have the answer in working memory, use FINISH immediately
-5. Minimize tool calls - think "what's the MINIMUM I need to answer this?"
+                  IMPORTANT EFFICIENCY RULES:
+                  1. For simple factual queries (e.g., "when was X born", "who is X"), use ONLY getFamily
+                  2. ONLY use getDPOCH if the query explicitly mentions DPOCH or asks "how long after DPOCH"
+                  3. ONLY use getEvents if the query asks about events, achievements, or timeline
+                  4. If you already have the answer in working memory, use FINISH immediately
+                  5. Minimize tool calls - think "what's the MINIMUM I need to answer this?"
 
-Think step by step:
-1. What EXACTLY is the user asking for?
-2. Do I already have this information in working memory?
-3. What is the MINIMUM action needed to answer?
+                  Think step by step:
+                  1. What EXACTLY is the user asking for?
+                  2. Do I already have this information in working memory?
+                  3. What is the MINIMUM action needed to answer?
 
-Be concise but thorough in your reasoning.`
-      },
-      {
-        role: 'user',
-        content: `Query: "${state.query}"
+                  Be concise but thorough in your reasoning.`
+                        },
+                        {
+                          role: 'user',
+                          content: `Query: "${state.query}"
 
-Previous iterations:
-${state.iterations.map(i => `- ${i.action}: ${i.observation.substring(0, 100)}`).join('\n') || 'None yet'}
+                  Previous iterations:
+                  ${state.iterations.map(i => `- ${i.action}: ${i.observation.substring(0, 100)}`).join('\n') || 'None yet'}
 
-Working memory:
-${Array.from(state.workingMemory.entries()).map(([k, v]) => `- ${k}: ${JSON.stringify(v).substring(0, 100)}`).join('\n') || 'Empty'}
+                  Working memory:
+                  ${Array.from(state.workingMemory.entries()).map(([k, v]) => `- ${k}: ${JSON.stringify(v).substring(0, 100)}`).join('\n') || 'Empty'}
 
-What should I do next? Think step by step.`
+                  What should I do next? Think step by step.`
       }
     ];
 
@@ -230,7 +230,7 @@ What should I do next? Think step by step.`
    * ACTION Phase: Based on reasoning, select which tool to use
    */
   private async selectAction(
-    state: AgentState, 
+    state: AgentState,
     thought: string
   ): Promise<{ action: string; actionInput?: any }> {
     if (!this.openai) {
@@ -243,32 +243,32 @@ What should I do next? Think step by step.`
         role: 'system',
         content: `You are an action selector. Based on the reasoning, choose the MOST EFFICIENT next action.
 
-Available actions:
-- getFamily [name?: string] - Get family member(s) data (includes birthdate, role, relationships, occupation)
-- getEvents [name: string] - Get events for a person (only use if query asks about events/achievements)
-- getDPOCH - Get oldest birthdate epoch (ONLY use if query explicitly mentions DPOCH or asks relative time)
-- FINISH - When ready to answer (use as soon as you have sufficient data)
+                  Available actions:
+                  - getFamily [name?: string] - Get family member(s) data (includes birthdate, role, relationships, occupation)
+                  - getEvents [name: string] - Get events for a person (only use if query asks about events/achievements)
+                  - getDPOCH - Get oldest birthdate epoch (ONLY use if query explicitly mentions DPOCH or asks relative time)
+                  - FINISH - When ready to answer (use as soon as you have sufficient data)
 
-EFFICIENCY GUIDELINES:
-- For "when was X born" → ONLY use getFamily, then FINISH
-- For "who is X" → ONLY use getFamily, then FINISH  
-- For "what are X's events" → use getFamily first, then getEvents if needed, then FINISH
-- For "how long after DPOCH" → use getDPOCH AND getFamily/getEvents, then FINISH
-- NEVER call getDPOCH unless the query explicitly requires it
+                  EFFICIENCY GUIDELINES:
+                  - For "when was X born" → ONLY use getFamily, then FINISH
+                  - For "who is X" → ONLY use getFamily, then FINISH  
+                  - For "what are X's events" → use getFamily first, then getEvents if needed, then FINISH
+                  - For "how long after DPOCH" → use getDPOCH AND getFamily/getEvents, then FINISH
+                  - NEVER call getDPOCH unless the query explicitly requires it
 
-Respond with JSON only:
-{"action": "actionName", "actionInput": {...}} 
+                  Respond with JSON only:
+                  {"action": "actionName", "actionInput": {...}} 
 
-or for FINISH:
-{"action": "FINISH"}`
-      },
-      {
-        role: 'user',
-        content: `Query: "${state.query}"
+                  or for FINISH:
+                  {"action": "FINISH"}`
+                        },
+                        {
+                          role: 'user',
+                          content: `Query: "${state.query}"
 
-Reasoning: ${thought}
+                  Reasoning: ${thought}
 
-Select the next action (JSON only):`
+                  Select the next action (JSON only):`
       }
     ];
 
@@ -280,7 +280,7 @@ Select the next action (JSON only):`
     });
 
     const response = completion.choices[0]?.message?.content || '{"action": "FINISH"}';
-    
+
     try {
       return JSON.parse(response);
     } catch (e) {
@@ -293,7 +293,7 @@ Select the next action (JSON only):`
    * OBSERVATION Phase: Execute the selected action and observe results
    */
   private async executeAction(
-    action: string, 
+    action: string,
     actionInput: any,
     state: AgentState
   ): Promise<string> {
@@ -320,23 +320,23 @@ Select the next action (JSON only):`
         case 'getDPOCH': {
           const result = await this.mcpClient.getDPOCH();
           console.log('🔍 getDPOCH result:', JSON.stringify(result, null, 2));
-          
+
           const dpoch = result.data?.dpoch;
-          
+
           if (!dpoch && dpoch !== 0) {
             return `Error: Could not retrieve DPOCH value. Response: ${JSON.stringify(result)}`;
           }
-          
+
           state.workingMemory.set('dpoch', dpoch);
-          
+
           // Convert EPOCH to human-readable date for context
           const date = new Date(Number(dpoch) * 1000);
-          const dateStr = date.toLocaleDateString('en-US', { 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
+          const dateStr = date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
           });
-          
+
           return `DPOCH value retrieved: ${dpoch} (which is ${dateStr}). Data stored in working memory.`;
         }
 

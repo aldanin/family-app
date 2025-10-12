@@ -6,8 +6,8 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { FamilyAgent } from '../../agent/dist/agent';
-import { MultiPassAgent } from '../../agent/dist/multiPassAgent';
+import { SinglePassAgent } from '../../agent/dist/agents/singlePassAgent';
+import { MultiPassAgent } from '../../agent/dist/agents/multiPassAgent';
 
 // Load environment variables
 dotenv.config();
@@ -25,7 +25,7 @@ const openaiApiKey = process.env.OPENAI_API_KEY;
 const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 // Create both agent types
-const singlePassAgent = new FamilyAgent(mcpServerUrl, openaiApiKey, openaiModel);
+const singlePassAgent = new SinglePassAgent(mcpServerUrl, openaiApiKey, openaiModel);
 const multiPassAgent = new MultiPassAgent(mcpServerUrl, openaiApiKey, openaiModel, 5);
 
 console.log('🤖 Family AI Agent API Server');

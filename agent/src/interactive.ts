@@ -4,7 +4,7 @@
  */
 
 import './config';
-import { FamilyAgent } from './agent';
+import { SinglePassAgent } from './agents/singlePassAgent';
 import * as readline from 'readline';
 
 async function runInteractive() {
@@ -12,7 +12,7 @@ async function runInteractive() {
   const openaiApiKey = process.env.OPENAI_API_KEY;
   const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
   
-  const agent = new FamilyAgent(mcpServerUrl, openaiApiKey, openaiModel);
+  const agent = new SinglePassAgent(mcpServerUrl, openaiApiKey, openaiModel);
 
   console.log('\n╔════════════════════════════════════════════════════════╗');
   console.log('║         FAMILY AI AGENT - INTERACTIVE MODE            ║');
