@@ -15,6 +15,8 @@ interface QueryPlan {
 
 const EVENT_KEYWORDS = [
   'wedding',
+  'wed',
+  'wedded',
   'married',
   'marriage',
   'marry',
@@ -25,7 +27,11 @@ const EVENT_KEYWORDS = [
   'celebration',
   'graduation',
   'graduated',
-  'achievement'
+  'graduate',
+  'degree',
+  'achievement',
+  'accomplish',
+  'milestone'
 ];
 
 export class MultiPassAgent {
@@ -58,15 +64,31 @@ export class MultiPassAgent {
     // Generate embeddings early so we can use them in the final answer
     let embeddingResults: any[] = [];
     if (this.embeddingStore && typeof this.embeddingStore.getAll === 'function') {
-      const queryEmbedding = await this.answerGenerator.generateEmbedding(query);
-      if (queryEmbedding) {
-        embeddingResults = this.embeddingStore.findMostSimilar(queryEmbedding, 3);
-        console.log(`   ✓ Found ${embeddingResults.length} similar embeddings for multi-pass agent`);
-        if (embeddingResults.length > 0) {
-          console.log(`   → Top match: "${embeddingResults[0].text.substring(0, 60)}..." (similarity: ${embeddingResults[0].similarity.toFixed(3)})`);
+      try {
+        const queryEmbedding = await this.answerGenerator.generateEmbedding(query);
+        if (queryEmbedding) {
+          const SIMILARITY_THRESHOLD = 0.25; // Only use embeddings with >25% similarity
+          const allResults = this.embeddingStore.findMostSimilar(queryEmbedding, 3);
+          
+          // Log all results for debugging
+          console.log(`   ✓ Found ${allResults.length} embeddings for multi-pass agent:`);
+          allResults.forEach((r, i) => {
+            console.log(`      ${i + 1}. Similarity: ${r.similarity.toFixed(3)} - "${r.text.substring(0, 60)}..."`);
+          });
+          
+          embeddingResults = allResults.filter(e => e.similarity >= SIMILARITY_THRESHOLD);
+          console.log(`   → ${embeddingResults.length} above threshold (${SIMILARITY_THRESHOLD})`);
+          
+          if (embeddingResults.length > 0) {
+            console.log(`   → Using top match: "${embeddingResults[0].text.substring(0, 60)}..." (similarity: ${embeddingResults[0].similarity.toFixed(3)})`);
+          } else {
+            console.log('   → No embeddings above similarity threshold');
+          }
+        } else {
+          console.warn('   ⚠️  Could not generate query embedding for multi-pass agent');
         }
-      } else {
-        console.warn('   ⚠️  Could not generate query embedding for multi-pass agent');
+      } catch (error) {
+        console.error('   ❌ Error generating embeddings for multi-pass agent:', error instanceof Error ? error.message : error);
       }
     }
 
@@ -140,6 +162,12 @@ export class MultiPassAgent {
   private createQueryPlan(query: string): QueryPlan {
     const normalizedQuery = query.toLowerCase();
     const needsEvents = EVENT_KEYWORDS.some((keyword) => normalizedQuery.includes(keyword));
+
+    console.log(`\n📋 CREATING QUERY PLAN:`);
+    console.log(`   Query: "${query}"`);
+    console.log(`   Normalized: "${normalizedQuery}"`);
+    console.log(`   Needs Events: ${needsEvents}`);
+    console.log(`   Keywords found: ${EVENT_KEYWORDS.filter(k => normalizedQuery.includes(k)).join(', ') || 'none'}\n`);
 
     return {
       originalQuery: query,
@@ -258,24 +286,38 @@ export class MultiPassAgent {
   }
 
   private getPendingEventNames(plan: QueryPlan, memory: Map<string, any>): string[] {
+    console.log(`   📊 Getting pending events...`);
+    console.log(`   → needsEvents: ${plan.needsEvents}`);
+    
     if (!plan.needsEvents) {
+      console.log(`   → No events needed, returning empty array`);
       return [];
     }
 
     const members = memory.get('familyMembers');
     if (!Array.isArray(members) || members.length === 0) {
+      console.log(`   → No family members in memory yet`);
       return [];
     }
 
     if (plan.referencedNames.size === 0) {
+      console.log(`   → No referenced names yet, updating plan...`);
       this.updatePlanWithMembers(plan, members);
     }
 
-    return Array.from(plan.referencedNames).filter((name) => !plan.fetchedEventNames.has(name));
+    const pending = Array.from(plan.referencedNames).filter((name) => !plan.fetchedEventNames.has(name));
+    console.log(`   → Referenced names: ${Array.from(plan.referencedNames).join(', ')}`);
+    console.log(`   → Already fetched: ${Array.from(plan.fetchedEventNames).join(', ') || 'none'}`);
+    console.log(`   → Pending to fetch: ${pending.join(', ') || 'none'}\n`);
+    
+    return pending;
   }
 
   private updatePlanWithMembers(plan: QueryPlan, members: any[]): void {
     const normalized = plan.normalizedQuery;
+    console.log(`   🔍 Checking query for referenced names: "${normalized}"`);
+    console.log(`   🔍 needsEvents = ${plan.needsEvents}`);
+    
     members.forEach((member: any) => {
       const memberName = String(member.name || '')
         .trim()
@@ -284,10 +326,16 @@ export class MultiPassAgent {
         return;
       }
 
-      if (normalized.includes(memberName)) {
+      // Match name with or without possessive ('s) or as part of compound name
+      // e.g., "maya's wedding" should match "maya"
+      const namePattern = new RegExp(`\\b${memberName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}('s)?\\b`, 'i');
+      if (namePattern.test(normalized)) {
         plan.referencedNames.add(member.name);
+        console.log(`   ✓ Found referenced name: ${member.name}`);
       }
     });
+    
+    console.log(`   → Total referenced names: ${plan.referencedNames.size}`);
 
     if (plan.needsEvents && plan.referencedNames.size === 0) {
       if (normalized.includes('oldest')) {

@@ -104,12 +104,14 @@ export class ToolSelector {
       1. Default to "answerGeneralQuery" for user questions. It combines MCP data with the model's own knowledge.
       2. Use "getDPOCH" ONLY if the user explicitly asks for DPOCH / oldest birthdate.
       3. NEVER return raw data tools (getFamily/getEvents) directly for conversational answers.
+      4. CRITICAL: Achievements, accomplishments, graduations, degrees, and milestones are ALWAYS stored as EVENTS, not in member data. You MUST set fetchEvents=true for these queries.
 
   FLAG RULES:
   - fetchMembers = true when the question needs MEMBER info (names, birthdates, ages, relationships, "who is" someone, etc.).
   - Also set fetchMembers = true for help/expertise questions ("who should I call", "who can help with", "who would you recommend") even if the word "family" is missing—assume the user wants a family member.
-  - fetchEvents = true when the question needs FAMILY event history (graduations, weddings, achievements, timeline). For "family events" or "events for <person>", set this flag.
-  - For questions about someone's life events (wedding, graduation, etc.), set BOTH fetchMembers (to get relationship context like spouse) AND fetchEvents (to get the event details).
+  - fetchEvents = true when the question needs FAMILY event history (graduations, weddings, achievements, accomplishments, milestones, timeline). For "family events" or "events for <person>", set this flag.
+  - MANDATORY: If the query contains ANY of these keywords, you MUST set fetchEvents=true: achievement, accomplishment, milestone, graduation, degree, university, college, education, wedding, married, ceremony.
+  - For questions about someone's life events (wedding, graduation, achievements), set BOTH fetchMembers (to get relationship context like spouse) AND fetchEvents (to get the event details).
   - World/general history questions do NOT require fetchEvents; the model already knows world events.
   - If a question mixes world + family events, set fetchEvents = true so the agent retrieves family events, and let the model add world events itself.
   - When a specific family member is referenced, set fetchMembers = true (needed for context even if the final answer discusses world topics).
@@ -130,6 +132,8 @@ export class ToolSelector {
   - "If I have a stutter, who should I call?" → answerGeneralQuery, fetchMembers true, fetchEvents false, needsFamilyContext true.
   - "When is Liad's wedding?" → answerGeneralQuery, fetchMembers true (to get spouse info), fetchEvents true (to get wedding date), needsFamilyContext true.
   - "Does Maya have a degree?" → answerGeneralQuery, fetchMembers true (to identify Maya), fetchEvents true (to check graduation events), needsFamilyContext true.
+  - "Tell me about Maya's achievements" → answerGeneralQuery, fetchMembers true (to identify Maya), fetchEvents true (achievements are stored as events), needsFamilyContext true.
+  - "What has Amit accomplished?" → answerGeneralQuery, fetchMembers true, fetchEvents true (accomplishments are stored as events), needsFamilyContext true.
   - "What is DPOCH?" → getDPOCH, all fetch flags false, needsFamilyContext false.
     `;
   }

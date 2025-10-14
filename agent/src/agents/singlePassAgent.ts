@@ -52,21 +52,37 @@ export class SinglePassAgent {
       let embeddingResults: any[] = [];
       if (selection.selectedTool === 'answerGeneralQuery' && this.embeddingStore) {
         console.log('🔍 SEARCHING SEMANTIC MEMORY (family history embeddings)...');
-        // Generate real embedding for the query
-        const queryEmbedding = await this.answerGenerator.generateEmbedding(query);
-        if (queryEmbedding) {
-          embeddingResults = this.embeddingStore.findMostSimilar(queryEmbedding, 3);
-          console.log(`   ✓ Found ${embeddingResults.length} similar embeddings`);
-          if (embeddingResults.length > 0) {
-            console.log(`   → Top match: "${embeddingResults[0].text.substring(0, 60)}..." (similarity: ${embeddingResults[0].similarity.toFixed(3)})`);
-            // Add embeddings to context (create familyContext if it doesn't exist)
-            if (!familyContext.embeddings) {
-              familyContext.embeddings = [];
+        try {
+          // Generate real embedding for the query
+          const queryEmbedding = await this.answerGenerator.generateEmbedding(query);
+          if (queryEmbedding) {
+            const SIMILARITY_THRESHOLD = 0.25; // Only use embeddings with >25% similarity
+            const allResults = this.embeddingStore.findMostSimilar(queryEmbedding, 3);
+            
+            // Log all results for debugging
+            console.log(`   ✓ Found ${allResults.length} embeddings:`);
+            allResults.forEach((r, i) => {
+              console.log(`      ${i + 1}. Similarity: ${r.similarity.toFixed(3)} - "${r.text.substring(0, 60)}..."`);
+            });
+            
+            embeddingResults = allResults.filter(e => e.similarity >= SIMILARITY_THRESHOLD);
+            console.log(`   → ${embeddingResults.length} above threshold (${SIMILARITY_THRESHOLD})`);
+            
+            if (embeddingResults.length > 0) {
+              console.log(`   → Using top match: "${embeddingResults[0].text.substring(0, 60)}..." (similarity: ${embeddingResults[0].similarity.toFixed(3)})`);
+              // Add embeddings to context (create familyContext if it doesn't exist)
+              if (!familyContext.embeddings) {
+                familyContext.embeddings = [];
+              }
+              familyContext.embeddings = embeddingResults.map(e => e.text);
+            } else {
+              console.log('   → No embeddings above similarity threshold, skipping');
             }
-            familyContext.embeddings = embeddingResults.map(e => e.text);
+          } else {
+            console.warn('   ⚠️  Could not generate query embedding, skipping semantic search');
           }
-        } else {
-          console.warn('   ⚠️  Could not generate query embedding, skipping semantic search');
+        } catch (error) {
+          console.error('   ❌ Error searching embeddings:', error instanceof Error ? error.message : error);
         }
         console.log('');
       }
