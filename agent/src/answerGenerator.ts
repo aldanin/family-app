@@ -329,7 +329,7 @@ Use this information to provide rich, detailed answers about historical figures 
       success: true,
       data: { answer, timestamp: now.toISOString() },
       reasoning: 'Provided current date/time information'
-    };
+    }; 
   }
 
   /**
@@ -343,13 +343,14 @@ Use this information to provide rich, detailed answers about historical figures 
 
     try {
       console.log(`   → Generating embedding for query: "${text.substring(0, 50)}..."`);
+      const embeddingModel = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
       const response = await this.openai.embeddings.create({
-        model: 'text-embedding-3-small',
+        model: embeddingModel,
         input: text,
       });
 
       const embedding = response.data[0].embedding;
-      console.log(`   ✓ Generated embedding vector (${embedding.length} dimensions)`);
+      console.log(`   ✓ Generated embedding vector (${embedding.length} dimensions) using ${embeddingModel}`);
       return embedding;
     } catch (error) {
       console.error('   ✗ Failed to generate embedding:', error);
