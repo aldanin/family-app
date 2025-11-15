@@ -108,7 +108,8 @@
         (keyup.enter)="sendMessage()"
         [disabled]="isLoading"
         placeholder="Type your message here..."
-        class="message-input">
+        class="message-input"
+        #messageInput>
       <button 
         (click)="sendMessage()"
         [disabled]="!userInput.trim() || isLoading"

@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClientModule } from '@angular/common/http';
@@ -35,6 +35,8 @@ interface Message {
   styleUrls: ['./app.component.css']
 })
 export class AppComponent {
+  @ViewChild('messageInput') messageInput!: ElementRef<HTMLInputElement>;
+  
   messages: Message[] = [];
   userInput = '';
   allowHistory = true;  // Toggle for conversation history
@@ -72,6 +74,7 @@ export class AppComponent {
     } finally {
       this.isLoading = false;
       this.scrollToBottom();
+      this.focusInput();
     }
   }
 
@@ -201,5 +204,13 @@ export class AppComponent {
         container.scrollTop = container.scrollHeight;
       }
     }, 100);
+  }
+
+  private focusInput() {
+    setTimeout(() => {
+      if (this.messageInput?.nativeElement) {
+        this.messageInput.nativeElement.focus();
+      }
+    }, 150);
   }
 }
