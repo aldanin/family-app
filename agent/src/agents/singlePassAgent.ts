@@ -8,6 +8,7 @@ import { AnswerGenerator } from '../answerGenerator';
 import { ToolSelector, ToolSelectionResult } from '../toolSelector';
 import { AgentQuery, AgentResponse, ToolDefinition, UnifiedResult, ToolResult } from '../types';
 import { EmbeddingStore } from '../embeddingStore';
+import Copilot from "@github/copilot-sdk";
 
 export class SinglePassAgent {
   private familyClient: FamilyMCPClient;
