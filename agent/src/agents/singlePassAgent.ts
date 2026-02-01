@@ -1,489 +1,322 @@
 /**
- * Single-Pass Agent Class
- * Orchestrates tool selection and execution in a single decision
+ * Single-Pass agent backed by the GitHub Copilot SDK.
+ * Handles conversational queries, performs lightweight RAG, and exposes
+ * the Family MCP tools directly to the Copilot agent runtime.
  */
 
+import type { CopilotClient, CopilotSession, AssistantMessageEvent, SessionEventPayload, Tool } from '@github/copilot-sdk';
+import OpenAI from 'openai';
 import { FamilyMCPClient } from '../familyMCPClient';
-import { AnswerGenerator } from '../answerGenerator';
-import { ToolSelector, ToolSelectionResult } from '../toolSelector';
-import { AgentQuery, AgentResponse, ToolDefinition, UnifiedResult, ToolResult } from '../types';
-import { EmbeddingStore } from '../embeddingStore';
-import Copilot from "@github/copilot-sdk";
+import { EmbeddingStore, type EmbeddingEntry } from '../embeddingStore';
+import { AgentResponse, UnifiedResult } from '../types';
+
+type ConversationMessage = {
+  role: string;
+  content: string;
+};
+
+type EmbeddingMatch = EmbeddingEntry & {
+  similarity?: number;
+};
 
 export class SinglePassAgent {
-  private familyClient: FamilyMCPClient;
-  private answerGenerator: AnswerGenerator;
-  private toolSelector: ToolSelector;
-  private embeddingStore: EmbeddingStore;
+  private copilotClientPromise?: Promise<CopilotClient>;
+  private copilotModulePromise?: Promise<CopilotSdkModule>;
+  private readonly familyClient: FamilyMCPClient;
+  private readonly embeddingStore: EmbeddingStore;
+  private readonly openai: OpenAI | null;
+  private tools?: Tool[];
+  private readonly similarityThreshold = 0.25;
+  private readonly maxEmbeddingResults = 3;
+  private readonly sessionModel: string;
+  private readonly embeddingModel: string;
 
-  constructor(mcpServerUrl?: string, openaiApiKey?: string, openaiModel?: string, embeddingPath?: string) {
+  constructor(mcpServerUrl?: string, openaiApiKey?: string, sessionModel: string = 'gpt-4.1-mini', embeddingPath?: string) {
     this.familyClient = new FamilyMCPClient(mcpServerUrl);
-    this.answerGenerator = new AnswerGenerator(openaiApiKey, openaiModel);
     this.embeddingStore = new EmbeddingStore(embeddingPath);
-    // Gather all available tools
-    const allTools: ToolDefinition[] = [
-      ...this.familyClient.getAvailableTools(),
-      ...this.answerGenerator.getAvailableTools()
-    ];
-    // Pass OpenAI key to tool selector for LLM-based selection!
-    this.toolSelector = new ToolSelector(allTools, openaiApiKey);
+    this.openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
+    this.sessionModel = sessionModel;
+    this.embeddingModel = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
   }
 
-  /**
-   * Process a query - this is the main entry point
-   */
-  async processQuery(query: string, conversationHistory: Array<{role: string, content: string}> = []): Promise<AgentResponse> {
-    const startTime = Date.now();
-    
-    console.log('\n' + '='.repeat(80));
-    console.log('🚀 AGENT EXECUTION STARTED');
-    console.log('='.repeat(80));
-    
+  async processQuery(query: string, conversationHistory: ConversationMessage[] = []): Promise<AgentResponse> {
+    const start = Date.now();
+    const embeddingContext = await this.collectEmbeddingContext(query);
+    const prompt = this.composePrompt(query, conversationHistory, embeddingContext);
+    let finalAnswer = '';
+    const streamedChunks: string[] = [];
+    const toolsInvoked: string[] = [];
+    let session: CopilotSession | null = null;
+    let detachStream: (() => void) | null = null;
+    let detachFinal: (() => void) | null = null;
+    let detachTool: (() => void) | null = null;
+
     try {
-      const selection = await this.toolSelector.selectTool(query);
-      this.logToolSelection(selection);
-
-      selection.parameters = { query, ...(selection.parameters || {}) };
-
-      const familyContext = await this.fetchFamilyContextIfNeeded(selection, query);
-      await this.ensureRequiredParameters(selection, query, familyContext);
-
-      // ALWAYS search semantic embeddings when using GPT
-      // The embeddings contain family history (Ezra Danin, etc.) which supplements the database
-      let embeddingResults: any[] = [];
-      if (selection.selectedTool === 'answerGeneralQuery' && this.embeddingStore) {
-        console.log('🔍 SEARCHING SEMANTIC MEMORY (family history embeddings)...');
-        try {
-          // Generate real embedding for the query
-          const queryEmbedding = await this.answerGenerator.generateEmbedding(query);
-          if (queryEmbedding) {
-            const SIMILARITY_THRESHOLD = 0.25; // Only use embeddings with >25% similarity
-            const allResults = this.embeddingStore.findMostSimilar(queryEmbedding, 3);
-            
-            // Log all results for debugging
-            console.log(`   ✓ Found ${allResults.length} embeddings:`);
-            allResults.forEach((r, i) => {
-              console.log(`      ${i + 1}. Similarity: ${r.similarity.toFixed(3)} - "${r.text.substring(0, 60)}..."`);
-            });
-            
-            embeddingResults = allResults.filter(e => e.similarity >= SIMILARITY_THRESHOLD);
-            console.log(`   → ${embeddingResults.length} above threshold (${SIMILARITY_THRESHOLD})`);
-            
-            if (embeddingResults.length > 0) {
-              console.log(`   → Using top match: "${embeddingResults[0].text.substring(0, 60)}..." (similarity: ${embeddingResults[0].similarity.toFixed(3)})`);
-              // Add embeddings to context (create familyContext if it doesn't exist)
-              if (!familyContext.embeddings) {
-                familyContext.embeddings = [];
-              }
-              familyContext.embeddings = embeddingResults.map(e => e.text);
-            } else {
-              console.log('   → No embeddings above similarity threshold, skipping');
-            }
-          } else {
-            console.warn('   ⚠️  Could not generate query embedding, skipping semantic search');
-          }
-        } catch (error) {
-          console.error('   ❌ Error searching embeddings:', error instanceof Error ? error.message : error);
+      const client = await this.getCopilotClient();
+      const tools = await this.ensureTools();
+      session = await client.createSession({
+        model: this.sessionModel,
+        streaming: true,
+        tools,
+        systemMessage: {
+          mode: 'append',
+          content: this.buildSystemPrompt()
         }
-        console.log('');
+      });
+
+      detachStream = session.on('assistant.message_delta', (event) => {
+        streamedChunks.push(event.data.deltaContent);
+      });
+
+      detachFinal = session.on('assistant.message', (event) => {
+        finalAnswer = event.data.content;
+      });
+
+      detachTool = session.on('tool.execution_start', (event: SessionEventPayload<'tool.execution_start'>) => {
+        toolsInvoked.push(event.data.toolName);
+      });
+
+      const messageEvent: AssistantMessageEvent | undefined = await session.sendAndWait({ prompt });
+      const streamedAnswer = streamedChunks.join('');
+      if (!finalAnswer && streamedAnswer) {
+        finalAnswer = streamedAnswer;
+      }
+      if (!finalAnswer && messageEvent?.data.content) {
+        finalAnswer = messageEvent.data.content;
       }
 
-      const result = await this.executeSelectedTool(selection, query, familyContext, conversationHistory);
+      const executionTime = Date.now() - start;
+      const selectedTool = toolsInvoked.at(-1) || 'copilot-agent';
+      const unifiedResult = this.buildUnifiedResult(finalAnswer, embeddingContext, toolsInvoked);
 
-      const executionTime = Date.now() - startTime;
-
-      console.log('✅ TOOL EXECUTION COMPLETED');
-      console.log(`   Success: ${result.success}`);
-      console.log(`   Execution Time: ${executionTime}ms`);
-      console.log('');
-
-      // Normalize the result into unified format
-      const unifiedResult = this.normalizeResult(result, selection.selectedTool);
-      // Attach embedding results to metadata
-      if (embeddingResults.length && unifiedResult.metadata) {
-        unifiedResult.metadata.embeddingResults = embeddingResults;
-      }
-
-      const response: AgentResponse = {
+      return {
         query,
-        selectedTool: selection.selectedTool,
-        reasoning: selection.reasoning,
+        selectedTool,
+        reasoning: 'Answered via Copilot SDK agent',
         result: unifiedResult,
         executionTime
       };
-
-      console.log('='.repeat(80));
-      console.log('✨ AGENT EXECUTION FINISHED');
-      console.log('='.repeat(80) + '\n');
-
-      return response;
-
     } catch (error) {
-      const executionTime = Date.now() - startTime;
-      
-      console.error('❌ ERROR:', error);
-      console.log('='.repeat(80) + '\n');
-      
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
+      const executionTime = Date.now() - start;
+      const message = error instanceof Error ? error.message : 'Unknown error';
+
       return {
         query,
         selectedTool: 'error',
-        reasoning: 'Execution failed',
+        reasoning: 'Copilot agent call failed',
         result: {
-          answer: `❌ Error: ${errorMessage}`,
-          rawData: { error: errorMessage },
+          answer: `❌ Error: ${message}`,
+          rawData: { error: message },
           metadata: {
-            toolName: 'error'
+            toolName: 'error',
+            embeddingResults: this.serializeEmbeddingContext(embeddingContext)
           }
         },
         executionTime
       };
+    } finally {
+      detachStream?.();
+      detachFinal?.();
+      detachTool?.();
+      if (session) {
+        try {
+          await session.destroy();
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
     }
   }
 
-  private logToolSelection(selection: ToolSelectionResult) {
-    console.log('📊 TOOL SELECTION RESULT:');
-    console.log(`   Selected Tool: ${selection.selectedTool}`);
-    console.log(`   Confidence: ${(selection.confidence * 100).toFixed(0)}%`);
-    console.log(`   Reasoning: ${selection.reasoning}`);
-    console.log(`   Parameters:`, JSON.stringify(selection.parameters, null, 2));
-    console.log('');
-    console.log('⚙️  EXECUTING TOOL...\n');
-  }
-
-  private async fetchFamilyContextIfNeeded(selection: ToolSelectionResult, query: string) {
-    const familyContext: { members?: any[], count?: number, events?: any, embeddings?: string[] } = {};
-
-    if (selection.selectedTool !== 'answerGeneralQuery' || !selection.parameters?.needsFamilyContext) {
-      if (selection.selectedTool === 'answerGeneralQuery') {
-        console.log('⚠️  NO FAMILY CONTEXT - needsFamilyContext =', selection.parameters?.needsFamilyContext);
-        console.log('   GPT will answer WITHOUT family database access\n');
-      } else {
-        console.log(`ℹ️  Tool "${selection.selectedTool}" executing without pre-fetching GPT family context\n`);
-      }
-      return familyContext;
-    }
-
-    console.log('🔗 FETCHING FAMILY CONTEXT for GPT...');
-    console.log(`   needsFamilyContext = ${selection.parameters.needsFamilyContext}\n`);
-
-    if (selection.parameters.fetchMembers) {
-      console.log('   → LLM requested: Fetch family members');
-      const familyResult = await this.familyClient.getFamily();
-      if (familyResult.success) {
-        familyContext.members = familyResult.data.members;
-        familyContext.count = familyResult.data.count;
-        console.log(`   ✓ Retrieved ${familyContext.count} family members`);
-        if (familyContext.members) {
-          console.log(`   ✓ Members:`, familyContext.members.map((m: any) => m.name).join(', '));
-        }
-      } else {
-        console.error('   ❌ Failed to fetch family members:', familyResult.error);
-      }
-    }
-
-    if (selection.parameters.fetchEvents) {
-      console.log('   → LLM requested: Fetch events');
-
-      // Ensure we have member data to iterate through all members
-      if (!familyContext.members) {
-        console.log('   → No member list yet. Fetching family members for event lookup...');
-        const familyResult = await this.familyClient.getFamily();
-        if (familyResult.success) {
-          familyContext.members = familyResult.data.members;
-          familyContext.count = familyResult.data.count;
-          console.log(`   ✓ Retrieved ${familyContext.count} family members for event lookup`);
-        } else {
-          console.error('   ❌ Failed to fetch family members needed for events:', familyResult.error);
-        }
-      }
-
-      // AGENTIC PATTERN: Fetch ALL events and let GPT decide which ones matter
-      // No hard-coded logic to guess whose events we need!
-      const aggregatedEvents: any[] = [];
-
-      if (familyContext.members) {
-        console.log(`   → Fetching events for ALL ${familyContext.members.length} family members (GPT will filter relevant ones)`);
-        
-        for (const member of familyContext.members) {
-          const eventsResult = await this.familyClient.getEvents(member.name);
-
-          if (eventsResult.success && eventsResult.data?.events?.length) {
-            const eventsWithOwner = eventsResult.data.events.map((event: any) => ({
-              ...event,
-              person: member.name
-            }));
-            aggregatedEvents.push(...eventsWithOwner);
-            console.log(`     ✓ ${member.name}: ${eventsWithOwner.length} event(s)`);
-          }
-        }
-
-        if (aggregatedEvents.length > 0) {
-          familyContext.events = {
-            name: 'Family',
-            events: aggregatedEvents
-          };
-          console.log(`   ✓ Total: ${aggregatedEvents.length} event(s) from all family members`);
-          console.log(`   → GPT will analyze and select relevant events for the query\n`);
-        } else {
-          console.log('   ⚠️  No family events found in database\n');
-        }
-      }
-    }
-
-    console.log('   ✓ GPT will analyze this data and answer the query\n');
-    return familyContext;
-  }
-
-  private async ensureRequiredParameters(selection: ToolSelectionResult, query: string, familyContext: { members?: any[] }) {
-    if (selection.selectedTool !== 'getEvents') {
-      return;
-    }
-
-    const parameters = selection.parameters || (selection.parameters = {});
-    const lowerQuery = (parameters.query || query).toLowerCase();
-
-    if (!parameters.name) {
-      console.log('🔍 Attempting to identify family member for event lookup from query text...');
-
-      let membersSource = familyContext.members;
-      if (!membersSource) {
-        const familyResult = await this.familyClient.getFamily();
-        if (familyResult.success && Array.isArray(familyResult.data.members)) {
-          membersSource = familyResult.data.members;
-        }
-      }
-
-      if (membersSource) {
-        const matchedMember = membersSource.find((member: any) =>
-          lowerQuery.includes(member.name.toLowerCase())
-        );
-
-        if (matchedMember) {
-          parameters.name = matchedMember.name;
-          console.log(`   ✓ Detected family member: ${parameters.name}`);
-        }
-      }
-    }
-
-    if (!parameters.name) {
-      throw new Error('Missing required parameter: name (could not determine which family member to fetch events for)');
-    }
-
-    console.log(`   → Event target confirmed: ${parameters.name}\n`);
-  }
-
-  private async executeSelectedTool(
-    selection: ToolSelectionResult, 
-    query: string, 
-    familyContext: { members?: any[], count?: number, events?: any, embeddings?: string[] } = {},
-    conversationHistory: Array<{role: string, content: string}> = []
-  ): Promise<ToolResult> {
-    switch (selection.selectedTool) {
-      case 'getDPOCH':
-        return this.familyClient.getDPOCH();
-
-      case 'getEvents': {
-        const name = selection.parameters?.name;
-        if (!name) {
-          throw new Error('Missing required parameter: name');
-        }
-        return this.familyClient.getEvents(name, selection.parameters?.refDate);
-      }
-
-      case 'getFamily':
-        return this.familyClient.getFamily(selection.parameters?.name);
-
-      case 'answerGeneralQuery':
-        return this.answerGenerator.answerGeneralQuery(query, familyContext, conversationHistory);
-
-      default:
-        throw new Error(`Unknown tool: ${selection.selectedTool}`);
-    }
-  }
-
-  /**
-   * Normalize tool results into unified format
-   * All tools return different data structures - this unifies them
-   */
-  private normalizeResult(toolResult: ToolResult, selectedTool: string): UnifiedResult {
-    const data = toolResult.data || {};
-    
-    // Handle errors first (when success is false)
-    if (!toolResult.success) {
-      // If error has an answer field, use it
-      if (data.answer) {
-        return {
-          answer: data.answer,
-          rawData: data,
-          metadata: {
-            toolName: toolResult.toolName
-          }
-        };
-      }
-      // Otherwise create error message from error field
-      const errorMsg = toolResult.error || 'Unknown error occurred';
-      return {
-        answer: `❌ Error: ${errorMsg}`,
-        rawData: data,
-        metadata: {
-          toolName: toolResult.toolName
-        }
-      };
-    }
-    
-    // Handle OpenAI/General Knowledge responses (has 'answer' field)
-    if (data.answer) {
-      return {
-        answer: data.answer,
-        rawData: data,
-        metadata: {
-          toolName: toolResult.toolName,
-          model: data.model,
-          usage: data.usage,
-          hasContext: data.hasContext
-        }
-      };
-    }
-    
-    // Handle Family members response (has 'members' array) - CHECK THIS BEFORE EVENTS!
-    if (data.members && Array.isArray(data.members)) {
-      // Special case: single member query (e.g., birthdate question)
-      if (data.members.length === 1) {
-        const member = data.members[0];
-        const birthdate = new Date(member.birthdate);
-        const answer = `${member.name} was born on ${birthdate.toLocaleDateString('en-US', { 
-          weekday: 'long', 
-          year: 'numeric', 
-          month: 'long', 
-          day: 'numeric' 
-        })} (${birthdate.toLocaleDateString()})`;
-        
-        return {
-          answer,
-          rawData: data,
-          metadata: {
-            toolName: toolResult.toolName,
-            memberCount: 1,
-            personName: member.name
-          }
-        };
-      }
-      
-      // Multiple members: show list
-      let answer = `Found ${data.count} family member(s)${data.name ? ` matching "${data.name}"` : ''}:\n\n`;
-      data.members.forEach((member: any, i: number) => {
-        const birthdate = new Date(member.birthdate).toLocaleDateString();
-        answer += `${i + 1}. ${member.name} - Born: ${birthdate}\n`;
-      });
-      
-      return {
-        answer: answer.trim(),
-        rawData: data,
-        metadata: {
-          toolName: toolResult.toolName,
-          memberCount: data.count
-        }
-      };
-    }
-    
-    // Handle Events responses (has 'events' array)
-    if (data.events && Array.isArray(data.events)) {
-      let answer = `Found ${data.count} event(s) for ${data.name}:\n\n`;
-      data.events.forEach((event: any, i: number) => {
-        const date = new Date(event.event_date).toLocaleDateString();
-        answer += `${i + 1}. ${event.event_type} - ${date}\n`;
-      });
-      
-      return {
-        answer: answer.trim(),
-        rawData: data,
-        metadata: {
-          toolName: toolResult.toolName,
-          eventCount: data.count,
-          personName: data.name
-        }
-      };
-    }
-    
-    // Handle DPOCH responses (has 'dpoch' field)
-    if (data.dpoch) {
-      const date = new Date(parseInt(data.dpoch) * 1000);
-      return {
-        answer: `DPOCH (Date of Oldest Person in Clan): ${date.toLocaleDateString()}\n${data.description}`,
-        rawData: data,
-        metadata: {
-          toolName: toolResult.toolName
-        }
-      };
-    }
-    
-    // Handle calculation/math responses
-    if (data.calculation) {
-      return {
-        answer: data.calculation,
-        rawData: data,
-        metadata: {
-          toolName: toolResult.toolName
-        }
-      };
-    }
-    
-    // Fallback: convert data to string
-    return {
-      answer: typeof data === 'string' ? data : JSON.stringify(data, null, 2),
-      rawData: data,
-      metadata: {
-        toolName: toolResult.toolName
-      }
-    };
-  }
-
-  /**
-   * Get information about the agent's capabilities
-   */
   getCapabilities() {
     return {
       familyTools: this.familyClient.getAvailableTools(),
-      answerGenerator: this.answerGenerator.getAvailableTools(),
-      selectionStrategy: this.toolSelector.getSelectionStrategy()
+      answerGenerator: [],
+      selectionStrategy: 'Delegates planning to Copilot SDK agent runtime'
     };
   }
 
-  /**
-   * Process multiple queries in sequence to demonstrate tool selection
-   */
   async demonstrateToolSelection(queries: string[]): Promise<void> {
-    console.log('\n' + '█'.repeat(80));
-    console.log('🎓 TOOL SELECTION DEMONSTRATION');
-    console.log('█'.repeat(80) + '\n');
-    
-    console.log('This demonstration shows how the agent selects different tools');
-    console.log('based on the type of query it receives.\n');
-    
-    for (let i = 0; i < queries.length; i++) {
-      console.log(`\n${'▼'.repeat(40)}`);
-      console.log(`Query ${i + 1}/${queries.length}`);
-      console.log('▼'.repeat(40));
-      
-      const response = await this.processQuery(queries[i]);
-      
-      console.log('📤 RESPONSE SUMMARY:');
-      console.log(`   Query: "${response.query}"`);
-      console.log(`   Tool Used: ${response.selectedTool}`);
-      
-      const resultStr = JSON.stringify(response.result || {});
-      const preview = resultStr.length > 100 ? resultStr.substring(0, 100) + '...' : resultStr;
-      console.log(`   Result Preview: ${preview}`);
-      console.log('');
-      
-      // Small delay for readability
-      await new Promise(resolve => setTimeout(resolve, 500));
+    for (const query of queries) {
+      const response = await this.processQuery(query);
+      console.log('─'.repeat(60));
+      console.log(`Query: ${query}`);
+      console.log(`Selected tool: ${response.selectedTool}`);
+      console.log(`Answer: ${response.result.answer}`);
     }
-    
-    console.log('\n' + '█'.repeat(80));
-    console.log('✅ DEMONSTRATION COMPLETE');
-    console.log('█'.repeat(80) + '\n');
+  }
+
+  private buildFamilyTools(defineToolFn: CopilotSdkModule['defineTool']): Tool[] {
+    const getDpoch = defineToolFn('family_get_dpoch', {
+      description: 'Get the oldest birthdate epoch (DPOCH) from the family MCP server',
+      handler: async () => {
+        const result = await this.familyClient.getDPOCH();
+        if (!result.success) {
+          throw new Error(result.error || 'Unable to retrieve DPOCH');
+        }
+        return result.data;
+      }
+    });
+
+    const getFamily = defineToolFn('family_get_family', {
+      description: 'Get family members or search by name',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Optional name filter' }
+        }
+      },
+      handler: async (args: { name?: string }) => {
+        const result = await this.familyClient.getFamily(args?.name);
+        if (!result.success) {
+          throw new Error(result.error || 'Unable to retrieve family members');
+        }
+        return result.data;
+      }
+    });
+
+    const getEvents = defineToolFn('family_get_events', {
+      description: 'Get timeline events for a specific family member',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Family member name' },
+          refDate: { type: 'number', description: 'Optional reference EPOCH' }
+        },
+        required: ['name']
+      },
+      handler: async (args: { name: string; refDate?: number }) => {
+        const result = await this.familyClient.getEvents(args.name, args.refDate);
+        if (!result.success) {
+          throw new Error(result.error || 'Unable to retrieve events');
+        }
+        return result.data;
+      }
+    });
+
+    return [getDpoch, getFamily as Tool, getEvents as Tool];
+  }
+
+  private buildSystemPrompt(): string {
+    return [
+      'You are the Family Knowledge Agent. Answer user questions clearly and concisely.',
+      'Use the family_get_* tools for authoritative family data when needed.',
+      'Blend semantic memory snippets with tool outputs, but prefer exact tool data for facts.',
+      `Today is ${new Date().toISOString().split('T')[0]}.`
+    ].join('\n');
+  }
+
+  private composePrompt(query: string, history: ConversationMessage[], embeddingContext: EmbeddingMatch[]): string {
+    const sections: string[] = [];
+
+    if (history.length > 0) {
+      const formattedHistory = history
+        .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+        .join('\n');
+      sections.push('Conversation history:\n' + formattedHistory);
+    }
+
+    if (embeddingContext.length > 0) {
+      const serialized = embeddingContext
+        .map((entry, index) => {
+          const score = entry.similarity !== undefined ? ` (similarity ${entry.similarity.toFixed(3)})` : '';
+          return `${index + 1}. ${entry.text}${score}`;
+        })
+        .join('\n');
+      sections.push('Relevant semantic memory:\n' + serialized);
+    }
+
+    sections.push('User request:\n' + query);
+    sections.push('Respond with a helpful, factual answer.');
+
+    return sections.join('\n\n');
+  }
+
+  private async collectEmbeddingContext(query: string): Promise<EmbeddingMatch[]> {
+    if (!this.openai) {
+      return [];
+    }
+
+    try {
+      const embedding = await this.generateEmbedding(query);
+      if (!embedding) {
+        return [];
+      }
+      const ranked = this.embeddingStore.findMostSimilar(embedding, this.maxEmbeddingResults);
+      return ranked.filter((entry) => (entry.similarity ?? 0) >= this.similarityThreshold);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn('Embedding lookup failed:', message);
+      return [];
+    }
+  }
+
+  private async generateEmbedding(text: string): Promise<number[] | null> {
+    if (!this.openai) {
+      return null;
+    }
+
+    try {
+      const response = await this.openai.embeddings.create({
+        model: this.embeddingModel,
+        input: text
+      });
+      return response.data[0]?.embedding ?? null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn('Failed to generate embedding:', message);
+      return null;
+    }
+  }
+
+  private buildUnifiedResult(answer: string, embeddingContext: EmbeddingMatch[], toolsInvoked: string[]): UnifiedResult {
+    const metadata: Record<string, unknown> = {
+      toolName: toolsInvoked.at(-1) || 'copilot-agent'
+    };
+
+    const serializedContext = this.serializeEmbeddingContext(embeddingContext);
+    if (serializedContext.length > 0) {
+      metadata.embeddingResults = serializedContext;
+    }
+
+    return {
+      answer: answer || 'No response produced.',
+      rawData: {
+        toolsInvoked,
+        embeddingContext: serializedContext
+      },
+      metadata
+    };
+  }
+
+  private serializeEmbeddingContext(embeddingContext: EmbeddingMatch[]) {
+    return embeddingContext.map((entry) => ({
+      text: entry.text,
+      similarity: entry.similarity
+    }));
+  }
+
+  private getCopilotModule(): Promise<CopilotSdkModule> {
+    if (!this.copilotModulePromise) {
+      this.copilotModulePromise = eval('import("@github/copilot-sdk")') as Promise<CopilotSdkModule>;
+    }
+    return this.copilotModulePromise;
+  }
+
+  private async getCopilotClient(): Promise<CopilotClient> {
+    if (!this.copilotClientPromise) {
+      this.copilotClientPromise = this.getCopilotModule().then(({ CopilotClient }) => new CopilotClient());
+    }
+    return this.copilotClientPromise;
+  }
+
+  private async ensureTools(): Promise<Tool[]> {
+    if (!this.tools) {
+      const module = await this.getCopilotModule();
+      this.tools = this.buildFamilyTools(module.defineTool);
+    }
+    return this.tools;
   }
 }
+
+type CopilotSdkModule = typeof import('@github/copilot-sdk');
