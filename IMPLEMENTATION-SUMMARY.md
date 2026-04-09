@@ -143,8 +143,7 @@ This compiles:
 
 ### **2. Build the Agent API**
 ```bash
-cd ../agent-api
-yarn build
+yarn build:api
 ```
 
 This compiles the server that uses both agents.
@@ -156,13 +155,11 @@ This compiles the server that uses both agents.
 cd family-mcp-server
 yarn dev
 
-# Terminal 2: Agent API (port 3001)
-cd agent-api
-npm start
+# Terminal 2: Agent API (port 3001) from family-app/
+yarn start:api
 
-# Terminal 3: Angular UI (port 4200)
-cd family-agent-ui
-npm start
+# Terminal 3: Angular UI (port 4200) from family-app/
+yarn start:ui
 ```
 
 ### **4. Test Both Modes**
@@ -222,7 +219,7 @@ Edit `agent/src/multiPassAgent.ts` line 34:
 // Try different values
 private maxIterations: number = 3;  // vs 5 vs 10
 ```
-- Rebuild: `cd agent && yarn build`
+- Rebuild: `yarn build:agent`
 - Test: Does it affect complex queries?
 
 ### **Experiment 3: Add Console Logging**
@@ -272,10 +269,9 @@ Run these commands to get started:
 
 ```bash
 # From family-app directory
-cd agent && yarn build
-cd ../agent-api && yarn build
-cd ../agent-api && npm start  # Terminal 1
-cd ../family-agent-ui && npm start  # Terminal 2
+yarn build
+yarn start:api  # Terminal 1
+yarn start:ui   # Terminal 2
 ```
 
 Then open `http://localhost:4200` and toggle Multi-Pass mode!

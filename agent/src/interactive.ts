@@ -4,7 +4,6 @@
  */
 
 import dotenv from "dotenv";
-dotenv.config();
 import './config';
 import { SinglePassAgent } from './agents/singlePassAgent';
 import * as readline from 'readline';

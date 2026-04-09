@@ -2,6 +2,7 @@ import { FamilyMCPClient } from '../familyMCPClient';
 import { AnswerGenerator } from '../answerGenerator';
 import { AgentIteration, AgentState, MultiPassAgentResponse } from '../types';
 import { EmbeddingStore, EmbeddingEntry } from '../embeddingStore';
+import { isLineageQuery, resolveLineageQuery } from '../lineageResolver';
 
 type AgentAction = 'getFamily' | 'getEvents' | 'FINISH';
 
@@ -89,6 +90,10 @@ export class MultiPassAgent {
 
   async processQuery(query: string, conversationHistory: any[] = []): Promise<MultiPassAgentResponse> {
     const startedAt = Date.now();
+    const directLineage = await this.tryResolveLineageQuery(query, startedAt);
+    if (directLineage) {
+      return directLineage;
+    }
     const insights = this.analyzeQuery(query);
     const embeddingResults = await this.lookupSemanticMemories(query);
 
@@ -157,6 +162,42 @@ export class MultiPassAgent {
       iterations: state.iterations,
       totalIterations: state.iterations.length,
       reasoningSteps: state.iterations.map((iteration) => iteration.thought)
+    };
+  }
+
+  private async tryResolveLineageQuery(query: string, startedAt: number): Promise<MultiPassAgentResponse | null> {
+    if (!isLineageQuery(query)) {
+      return null;
+    }
+
+    const familyResult = await this.mcpClient.getFamily();
+    if (!familyResult.success || !Array.isArray(familyResult.data?.members)) {
+      return null;
+    }
+
+    const resolution = resolveLineageQuery(query, familyResult.data.members, this.embeddingStore.getAll());
+    if (!resolution) {
+      return null;
+    }
+
+    return {
+      query,
+      selectedTool: 'family_lineage',
+      reasoning: 'Resolved by combining MCP family data with semantic memory lineage facts',
+      result: {
+        answer: resolution.answer,
+        rawData: {
+          path: resolution.path,
+          evidence: resolution.evidence
+        },
+        metadata: {
+          toolName: 'family_lineage'
+        }
+      },
+      executionTime: Date.now() - startedAt,
+      iterations: [],
+      totalIterations: 0,
+      reasoningSteps: ['Resolved by lineage graph']
     };
   }
 

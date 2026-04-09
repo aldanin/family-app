@@ -4,11 +4,10 @@
  * the Family MCP tools directly to the Copilot agent runtime.
  */
 
-import { approveAll } from '@github/copilot-sdk';
-import type { CopilotClient, CopilotSession, AssistantMessageEvent, SessionEventPayload, Tool } from '@github/copilot-sdk';
 import OpenAI from 'openai';
 import { FamilyMCPClient } from '../familyMCPClient';
 import { EmbeddingStore, type EmbeddingEntry } from '../embeddingStore';
+import { isLineageQuery, resolveLineageQuery } from '../lineageResolver';
 import { AgentResponse, UnifiedResult } from '../types';
 
 type ConversationMessage = {
@@ -43,6 +42,10 @@ export class SinglePassAgent {
   async processQuery(query: string, conversationHistory: ConversationMessage[] = []): Promise<AgentResponse> {
     const start = Date.now();
     const embeddingContext = await this.collectEmbeddingContext(query);
+    const directLineage = await this.tryResolveLineageQuery(query, start, embeddingContext);
+    if (directLineage) {
+      return directLineage;
+    }
     const prompt = this.composePrompt(query, conversationHistory, embeddingContext);
     let finalAnswer = '';
     const streamedChunks: string[] = [];
@@ -53,13 +56,14 @@ export class SinglePassAgent {
     let detachTool: (() => void) | null = null;
 
     try {
+      const module = await this.getCopilotModule();
       const client = await this.getCopilotClient();
       const tools = await this.ensureTools();
       session = await client.createSession({
         model: this.sessionModel,
         streaming: true,
         tools,
-        onPermissionRequest: approveAll,
+        onPermissionRequest: module.approveAll,
         systemMessage: {
           mode: 'append',
           content: this.buildSystemPrompt()
@@ -74,11 +78,11 @@ export class SinglePassAgent {
         finalAnswer = event.data.content;
       });
 
-      detachTool = session.on('tool.execution_start', (event: SessionEventPayload<'tool.execution_start'>) => {
+      detachTool = session.on('tool.execution_start', (event) => {
         toolsInvoked.push(event.data.toolName);
       });
 
-      const messageEvent: AssistantMessageEvent | undefined = await session.sendAndWait({ prompt });
+      const messageEvent = await session.sendAndWait({ prompt });
       const streamedAnswer = streamedChunks.join('');
       if (!finalAnswer && streamedAnswer) {
         finalAnswer = streamedAnswer;
@@ -298,6 +302,41 @@ export class SinglePassAgent {
     }));
   }
 
+  private async tryResolveLineageQuery(query: string, start: number, embeddingContext: EmbeddingMatch[]): Promise<AgentResponse | null> {
+    if (!isLineageQuery(query)) {
+      return null;
+    }
+
+    const familyResult = await this.familyClient.getFamily();
+    if (!familyResult.success || !Array.isArray(familyResult.data?.members)) {
+      return null;
+    }
+
+    const resolution = resolveLineageQuery(query, familyResult.data.members, this.embeddingStore.getAll());
+    if (!resolution) {
+      return null;
+    }
+
+    return {
+      query,
+      selectedTool: 'family_lineage',
+      reasoning: 'Resolved by combining MCP family data with semantic memory lineage facts',
+      result: {
+        answer: resolution.answer,
+        rawData: {
+          path: resolution.path,
+          evidence: resolution.evidence,
+          embeddingContext: this.serializeEmbeddingContext(embeddingContext)
+        },
+        metadata: {
+          toolName: 'family_lineage',
+          embeddingResults: this.serializeEmbeddingContext(embeddingContext)
+        }
+      },
+      executionTime: Date.now() - start
+    };
+  }
+
   private getCopilotModule(): Promise<CopilotSdkModule> {
     if (!this.copilotModulePromise) {
       this.copilotModulePromise = eval('import("@github/copilot-sdk")') as Promise<CopilotSdkModule>;
@@ -321,4 +360,51 @@ export class SinglePassAgent {
   }
 }
 
-type CopilotSdkModule = typeof import('@github/copilot-sdk');
+type Tool = unknown;
+
+type AssistantMessageEvent = {
+  data: {
+    content: string;
+  };
+};
+
+type AssistantMessageDeltaEvent = {
+  data: {
+    deltaContent: string;
+  };
+};
+
+type ToolExecutionStartEvent = {
+  data: {
+    toolName: string;
+  };
+};
+
+type DefineTool = (name: string, config: Record<string, unknown>) => Tool;
+
+type CopilotSession = {
+  on(event: 'assistant.message_delta', handler: (event: AssistantMessageDeltaEvent) => void): () => void;
+  on(event: 'assistant.message', handler: (event: AssistantMessageEvent) => void): () => void;
+  on(event: 'tool.execution_start', handler: (event: ToolExecutionStartEvent) => void): () => void;
+  sendAndWait(input: { prompt: string }): Promise<AssistantMessageEvent | undefined>;
+  destroy(): Promise<void>;
+};
+
+type CopilotClient = {
+  createSession(input: {
+    model: string;
+    streaming: boolean;
+    tools: Tool[];
+    onPermissionRequest: unknown;
+    systemMessage: {
+      mode: 'append';
+      content: string;
+    };
+  }): Promise<CopilotSession>;
+};
+
+type CopilotSdkModule = {
+  CopilotClient: new () => CopilotClient;
+  defineTool: DefineTool;
+  approveAll: unknown;
+};

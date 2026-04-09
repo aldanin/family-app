@@ -117,17 +117,10 @@ Iteration 3:
 ### **Step 1: Build the Project**
 
 ```bash
-# Build agent package
-cd agent
-yarn build
-
-# Build API
-cd ../agent-api
-yarn build
-
-# Build UI (in separate terminal)
-cd ../family-agent-ui
-npm start
+# From the family-app root
+yarn build:agent
+yarn build:api
+yarn build:ui
 ```
 
 ### **Step 2: Start Services**
@@ -137,13 +130,11 @@ npm start
 cd family-mcp-server
 yarn dev
 
-# Terminal 2: Start Agent API
-cd agent-api
-npm start
+# Terminal 2: Start Agent API from family-app/
+yarn start:api
 
-# Terminal 3: Start UI
-cd family-agent-ui
-npm start
+# Terminal 3: Start UI from family-app/
+yarn start:ui
 ```
 
 ### **Step 3: Test Queries**

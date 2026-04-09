@@ -171,22 +171,19 @@ family-app/
 │   │   ├── answerGenerator.ts      # GPT answer generation
 │   │   ├── familyMCPClient.ts      # MCP server communication
 │   │   └── types.ts                # TypeScript interfaces
-│   └── package.json
 │
 ├── agent-api/                      # Express.js REST API
 │   ├── src/
 │   │   └── server.ts               # HTTP endpoint for UI
-│   ├── .env                        # MCP_SERVER_URL, OPENAI_API_KEY
-│   └── package.json
+│   └── .env                        # MCP_SERVER_URL, OPENAI_API_KEY
 │
 ├── family-agent-ui/                # Angular frontend
 │   ├── src/app/
 │   │   ├── app.component.ts        # Main chat component
 │   │   ├── app.component.html      # Chat UI template
 │   │   └── app.component.css       # Styles
-│   └── package.json
 │
-├── package.json                    # Root scripts (npm start/stop)
+├── package.json                    # Single manifest for agent, API, and UI
 └── README.md                       # This file
 ```
 
@@ -195,7 +192,7 @@ family-app/
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 18+ and npm
+- Node.js 18+ and Yarn Classic
 - MCP Family Server running on `http://localhost:6402/sse`
 - OpenAI API key
 
@@ -203,7 +200,7 @@ family-app/
 
 1. **Install dependencies:**
    ```bash
-   npm install
+   yarn install
    ```
 
 2. **Configure API keys:**
@@ -216,11 +213,12 @@ family-app/
 
 3. **Start everything:**
    ```bash
-   npm start
+   yarn start
    ```
    This will:
    - Build the agent
-   - Build the agent-api
+   - Build the agent-api (which depends on the agent build)
+   - Build the UI
    - Start agent-api (port 3001)
    - Start UI (port 4200)
 
@@ -231,7 +229,7 @@ family-app/
 
 ### Stop Everything
 ```bash
-npm stop
+yarn stop
 ```
 (Kills all Node.js processes)
 
@@ -403,12 +401,12 @@ Try these to see different capabilities:
 - Check API quota/billing
 
 ### Build errors
-- Delete `node_modules` and reinstall: `npm install`
-- Rebuild agent: `cd agent && yarn build`
+- Delete `node_modules` and reinstall: `yarn install`
+- Rebuild agent: `yarn build:agent`
 
 ### UI not loading
 - Check if ports 3001 and 4200 are available
-- Restart with `npm stop` then `npm start`
+- Restart with `yarn stop` then `yarn start`
 
 ---
 

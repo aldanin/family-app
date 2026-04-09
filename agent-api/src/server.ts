@@ -10,7 +10,8 @@ import path from 'path';
 import { SinglePassAgent } from '../../agent/dist/agents/singlePassAgent';
 import { MultiPassAgent } from '../../agent/dist/agents/multiPassAgent';
 
-// Load environment variables
+// Load environment variables from the API folder first so root-level scripts still work.
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config();
 
 const app = express();

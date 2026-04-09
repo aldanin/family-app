@@ -2,14 +2,21 @@
   "name": "family-app",
   "version": "1.0.0",
   "description": "Family AI Agent with MCP Server Integration",
+  "private": true,
   "scripts": {
-    "start": "npm run build && npm run start:all",
-    "build": "npm run build:agent && npm run build:api",
-    "build:agent": "cd agent && yarn build",
-    "build:api": "cd agent-api && yarn build",
-    "start:all": "start \"Agent API\" cmd /k \"cd agent-api && yarn start\" && timeout /t 3 && start \"Family UI\" cmd /k \"cd family-agent-ui && yarn start\"",
-    "start:api": "cd agent-api && yarn start",
-    "start:ui": "cd family-agent-ui && yarn start",
+    "build": "yarn build:api && yarn build:ui",
+    "build:agent": "tsc -p agent/tsconfig.json",
+    "build:api": "yarn build:agent && tsc -p agent-api/tsconfig.json",
+    "build:ui": "cd family-agent-ui && ng build",
+    "serve:api": "node agent-api/dist/server.js",
+    "serve:ui": "cd family-agent-ui && ng serve",
+    "serve:all": "concurrently -k -n API,UI -c blue,green \"yarn serve:api\" \"yarn serve:ui\"",
+    "start": "yarn build && yarn serve:all",
+    "start:all": "yarn build && yarn serve:all",
+    "start:api": "yarn build:api && yarn serve:api",
+    "start:ui": "yarn build:ui && yarn serve:ui",
+    "interactive": "yarn build:agent && node agent/dist/interactive.js",
+    "watch:agent": "tsc -p agent/tsconfig.json --watch",
     "stop": "taskkill /F /IM node.exe /T 2>nul || echo No Node.js processes found"
   },
   "keywords": [
@@ -19,5 +26,37 @@
     "openai"
   ],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "@angular/animations": "^17.0.0",
+    "@angular/common": "^17.0.0",
+    "@angular/compiler": "^17.0.0",
+    "@angular/core": "^17.0.0",
+    "@angular/forms": "^17.0.0",
+    "@angular/platform-browser": "^17.0.0",
+    "@angular/platform-browser-dynamic": "^17.0.0",
+    "@github/copilot-sdk": "^0.2.1",
+    "@modelcontextprotocol/sdk": "^1.19.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "node-fetch": "^2.7.0",
+    "openai": "^4.20.0",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0",
+    "tsx": "^4.21.0",
+    "zod": "^4.3.6",
+    "zone.js": "~0.14.2"
+  },
+  "devDependencies": {
+    "@angular-devkit/build-angular": "^17.0.0",
+    "@angular/cli": "^17.0.0",
+    "@angular/compiler-cli": "^17.0.0",
+    "@types/cors": "^2.8.13",
+    "@types/express": "^4.17.17",
+    "@types/node": "^20.5.0",
+    "@types/node-fetch": "^2.6.4",
+    "concurrently": "^9.1.2",
+    "typescript": "~5.2.2"
+  }
 }
