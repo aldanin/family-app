@@ -65,7 +65,7 @@ Ask natural language questions about your family, and the AI agent:
                 ▼                                  ▼
     ┌───────────────────────┐        ┌───────────────────────┐
     │   MCP SERVER          │        │   OPENAI API          │
-    │   (Port 6402)         │        │   (gpt-4o-mini)       │
+   │   (Port 6402)         │        │   (gpt-5.4-mini)      │
     │                       │        │                       │
     │ • getFamily()         │        │ • Tool selection      │
     │ • getEvents(name)     │        │ • Answer generation   │
@@ -96,7 +96,7 @@ Ask natural language questions about your family, and the AI agent:
 
 3. AGENT-API receives query → forwards to FamilyAgent.processQuery()
 
-4. TOOL SELECTOR (GPT-4o-mini) analyzes query:
+4. TOOL SELECTOR (GPT-5.4-mini) analyzes query:
    Input: "When was Agam born?"
    Decision: {
      tool: "answerGeneralQuery",
@@ -110,7 +110,7 @@ Ask natural language questions about your family, and the AI agent:
    → MCP server queries database
    ← Returns: [{ name: "Agam", birthdate: "2024-11-20", ... }, ...]
 
-6. ANSWER GENERATOR (GPT-4o-mini) creates response:
+6. ANSWER GENERATOR (GPT-5.4-mini) creates response:
    Input: 
      - Query: "When was Agam born?"
      - Context: Family members data
@@ -211,7 +211,7 @@ family-app/
    # Create .env file in agent-api/
    echo MCP_SERVER_URL=http://localhost:6402/sse > agent-api\.env
    echo OPENAI_API_KEY=your-key-here >> agent-api\.env
-   echo OPENAI_MODEL=gpt-4o-mini >> agent-api\.env
+   echo OPENAI_MODEL=gpt-5.4-mini >> agent-api\.env
    ```
 
 3. **Start everything:**
@@ -355,7 +355,7 @@ This means if the database schema changes, the agent keeps working!
 ```bash
 MCP_SERVER_URL=http://localhost:6402/sse   # MCP server endpoint
 OPENAI_API_KEY=sk-...                       # Your OpenAI key
-OPENAI_MODEL=gpt-4o-mini                    # GPT model to use
+OPENAI_MODEL=gpt-5.4-mini                  # GPT model to use
 ```
 
 ### Ports

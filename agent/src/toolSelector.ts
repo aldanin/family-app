@@ -47,7 +47,7 @@ export class ToolSelector {
       const systemPrompt = this.buildSystemPrompt();
 
       const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5.4-mini',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: query }

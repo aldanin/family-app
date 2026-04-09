@@ -21,9 +21,9 @@ app.use(cors()); // Enable CORS for Angular frontend
 app.use(express.json());
 
 // Initialize the agent
-const mcpServerUrl = process.env.MCP_SERVER_URL || 'http://localhost:6402';
+const mcpServerUrl = process.env.MCP_SERVER_URL || 'http://localhost:6402/sse';
 const openaiApiKey = process.env.OPENAI_API_KEY;
-const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const openaiModel = process.env.OPENAI_MODEL || 'gpt-5.4-mini';
 
 // Embeddings path - use absolute path to avoid issues with compiled dist/ folder
 const embeddingsPath = path.join(__dirname, '../../agent/assets/danin-embeddings.json');

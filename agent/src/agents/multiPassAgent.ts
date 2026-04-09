@@ -1,16 +1,22 @@
 import { FamilyMCPClient } from '../familyMCPClient';
 import { AnswerGenerator } from '../answerGenerator';
 import { AgentIteration, AgentState, MultiPassAgentResponse } from '../types';
-import { EmbeddingStore } from '../embeddingStore';
+import { EmbeddingStore, EmbeddingEntry } from '../embeddingStore';
 
 type AgentAction = 'getFamily' | 'getEvents' | 'FINISH';
 
-interface QueryPlan {
-  originalQuery: string;
-  normalizedQuery: string;
+interface QueryInsights {
+  normalized: string;
+  mentionsFamily: boolean;
   needsEvents: boolean;
   referencedNames: Set<string>;
-  fetchedEventNames: Set<string>;
+  keywords: string[];
+}
+
+interface PlannedStep {
+  thought: string;
+  action: AgentAction;
+  input?: any;
 }
 
 const EVENT_KEYWORDS = [
@@ -34,6 +40,29 @@ const EVENT_KEYWORDS = [
   'milestone'
 ];
 
+const FAMILY_KEYWORDS = [
+  'family',
+  'relative',
+  'dad',
+  'mom',
+  'mother',
+  'father',
+  'sister',
+  'brother',
+  'cousin',
+  'aunt',
+  'uncle',
+  'grand',
+  'children',
+  'kids',
+  'son',
+  'daughter',
+  'who in my family',
+  'how many people are in my family'
+];
+
+const DEFAULT_SIMILARITY_THRESHOLD = 0.25;
+
 export class MultiPassAgent {
   private mcpClient: FamilyMCPClient;
   private answerGenerator: AnswerGenerator;
@@ -44,9 +73,9 @@ export class MultiPassAgent {
   constructor(
     mcpServerUrl: string,
     openaiApiKey?: string,
-    openaiModel: string = 'gpt-4o-mini',
+    openaiModel: string = 'gpt-5.4-mini',
     maxIterations: number = 5,
-  embeddingPath?: string
+    embeddingPath?: string
   ) {
     this.mcpClient = new FamilyMCPClient(mcpServerUrl);
     this.answerGenerator = new AnswerGenerator(openaiApiKey, openaiModel);
@@ -59,38 +88,9 @@ export class MultiPassAgent {
   }
 
   async processQuery(query: string, conversationHistory: any[] = []): Promise<MultiPassAgentResponse> {
-    const plan = this.createQueryPlan(query);
-
-    // Generate embeddings early so we can use them in the final answer
-    let embeddingResults: any[] = [];
-    if (this.embeddingStore && typeof this.embeddingStore.getAll === 'function') {
-      try {
-        const queryEmbedding = await this.answerGenerator.generateEmbedding(query);
-        if (queryEmbedding) {
-          const SIMILARITY_THRESHOLD = 0.25; // Only use embeddings with >25% similarity
-          const allResults = this.embeddingStore.findMostSimilar(queryEmbedding, 3);
-          
-          // Log all results for debugging
-          console.log(`   ✓ Found ${allResults.length} embeddings for multi-pass agent:`);
-          allResults.forEach((r, i) => {
-            console.log(`      ${i + 1}. Similarity: ${r.similarity.toFixed(3)} - "${r.text.substring(0, 60)}..."`);
-          });
-          
-          embeddingResults = allResults.filter(e => e.similarity >= SIMILARITY_THRESHOLD);
-          console.log(`   → ${embeddingResults.length} above threshold (${SIMILARITY_THRESHOLD})`);
-          
-          if (embeddingResults.length > 0) {
-            console.log(`   → Using top match: "${embeddingResults[0].text.substring(0, 60)}..." (similarity: ${embeddingResults[0].similarity.toFixed(3)})`);
-          } else {
-            console.log('   → No embeddings above similarity threshold');
-          }
-        } else {
-          console.warn('   ⚠️  Could not generate query embedding for multi-pass agent');
-        }
-      } catch (error) {
-        console.error('   ❌ Error generating embeddings for multi-pass agent:', error instanceof Error ? error.message : error);
-      }
-    }
+    const startedAt = Date.now();
+    const insights = this.analyzeQuery(query);
+    const embeddingResults = await this.lookupSemanticMemories(query);
 
     const state: AgentState = {
       query,
@@ -103,309 +103,312 @@ export class MultiPassAgent {
       currentIteration: 0
     };
 
-    // Store embeddings in working memory so they can be used in final answer
     if (embeddingResults.length > 0) {
-      state.workingMemory.set('embeddings', embeddingResults.map(e => e.text));
+      state.workingMemory.set('embeddings', embeddingResults.map((entry) => entry.text));
     }
 
     while (!state.isComplete && state.currentIteration < state.maxIterations) {
-      state.currentIteration++;
+      state.currentIteration += 1;
 
-      const thought = this.generateThought(state, plan);
-      const { action, actionInput } = this.decideNextAction(state, plan);
-      const observation = await this.executeAction(action, actionInput, state, plan);
+      const step = this.planNextStep(state, insights);
+      const observation = await this.executeStep(step, state, insights);
 
       const iteration: AgentIteration = {
         iterationNumber: state.currentIteration,
-        thought,
-        action,
-        actionInput,
+        thought: step.thought,
+        action: step.action,
+        actionInput: step.input,
         observation,
         timestamp: new Date()
       };
 
       state.iterations.push(iteration);
-
       if (this.onIterationCallback) {
         this.onIterationCallback(iteration);
       }
 
-      if (action === 'FINISH') {
+      if (step.action === 'FINISH') {
         state.isComplete = true;
         state.finalAnswer = observation;
       }
     }
+
+
 
     if (!state.isComplete) {
       state.finalAnswer = await this.generateFinalAnswer(state);
       state.isComplete = true;
     }
 
+    const executionTime = Date.now() - startedAt;
+
     return {
       query: state.query,
       selectedTool: 'MultiPassAgent',
-      reasoning: state.iterations.map((i) => i.thought).join(' → '),
+      reasoning: state.iterations.map((iteration) => iteration.thought).join(' → '),
       result: {
         answer: state.finalAnswer || 'No answer generated',
         metadata: {
           toolName: 'MultiPassAgent',
-          embeddingResults: embeddingResults
+          embeddingResults
         }
       },
-      executionTime: 0,
+      executionTime,
       iterations: state.iterations,
       totalIterations: state.iterations.length,
-      reasoningSteps: state.iterations.map((i) => i.thought)
+      reasoningSteps: state.iterations.map((iteration) => iteration.thought)
     };
   }
 
-  private createQueryPlan(query: string): QueryPlan {
-    const normalizedQuery = query.toLowerCase();
-    const needsEvents = EVENT_KEYWORDS.some((keyword) => normalizedQuery.includes(keyword));
+    // Simple timeout helper to avoid hanging on network/LLM calls
+    private withTimeout<T>(p: Promise<T>, ms: number, label = 'operation'): Promise<T> {
+      let timeoutId: NodeJS.Timeout;
+      const timeout = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      });
+      return Promise.race([p, timeout]).then((res) => {
+        clearTimeout(timeoutId!);
+        return res as T;
+      });
+    }
 
-    console.log(`\n📋 CREATING QUERY PLAN:`);
+  private analyzeQuery(query: string): QueryInsights {
+    const normalized = query.toLowerCase();
+    const familyHits = FAMILY_KEYWORDS.filter((keyword) => normalized.includes(keyword));
+    const eventHits = EVENT_KEYWORDS.filter((keyword) => normalized.includes(keyword));
+
+    console.log('\n📋 QUERY ANALYSIS');
     console.log(`   Query: "${query}"`);
-    console.log(`   Normalized: "${normalizedQuery}"`);
-    console.log(`   Needs Events: ${needsEvents}`);
-    console.log(`   Keywords found: ${EVENT_KEYWORDS.filter(k => normalizedQuery.includes(k)).join(', ') || 'none'}\n`);
+    console.log(`   Family keywords: ${familyHits.join(', ') || 'none'}`);
+    console.log(`   Event keywords: ${eventHits.join(', ') || 'none'}\n`);
 
     return {
-      originalQuery: query,
-      normalizedQuery,
-      needsEvents,
-      referencedNames: new Set(),
-      fetchedEventNames: new Set()
+      normalized,
+      mentionsFamily: familyHits.length > 0,
+      needsEvents: eventHits.length > 0,
+      referencedNames: new Set<string>(),
+      keywords: [...new Set([...familyHits, ...eventHits])]
     };
   }
 
-  private generateThought(state: AgentState, plan: QueryPlan): string {
-    if (!state.workingMemory.has('familyMembers')) {
-      return 'I need the full family roster before I can reason about this question.';
+  private async lookupSemanticMemories(query: string): Promise<EmbeddingEntry[]> {
+    if (!this.embeddingStore) {
+      return [];
     }
 
-    const pendingEvents = this.getPendingEventNames(plan, state.workingMemory);
-    if (pendingEvents.length > 0) {
-      return `I have the family data. The query references events, so I still need event history for ${pendingEvents.join(', ')}.`;
-    }
-
-    return 'All required data is available. Time to compose the final answer.';
-  }
-
-  private decideNextAction(state: AgentState, plan: QueryPlan): { action: AgentAction; actionInput?: any } {
-    if (!state.workingMemory.has('familyMembers')) {
-      return { action: 'getFamily' };
-    }
-
-    const pendingEvents = this.getPendingEventNames(plan, state.workingMemory);
-    if (pendingEvents.length > 0) {
-      const nextName = pendingEvents[0];
-      return { action: 'getEvents', actionInput: { name: nextName } };
-    }
-
-    return { action: 'FINISH' };
-  }
-
-  private async executeAction(
-    action: AgentAction,
-    actionInput: any,
-    state: AgentState,
-    plan: QueryPlan
-  ): Promise<string> {
     try {
-      switch (action) {
-        case 'getFamily': {
-          const result = await this.mcpClient.getFamily();
-          if (!result.success) {
-            return result.data?.answer || 'Failed to retrieve family members.';
-          }
+      const queryEmbedding = await this.answerGenerator.generateEmbedding(query);
+      if (!queryEmbedding) {
+        return [];
+      }
 
-          const members = Array.isArray(result.data?.members) ? result.data.members : [];
-          state.workingMemory.set('familyMembers', members);
-          this.updatePlanWithMembers(plan, members);
+      const results = this.embeddingStore.findMostSimilar(queryEmbedding, 3);
+      results.forEach((entry, index) => {
+        console.log(`   🔍 Semantic memory #${index + 1}: similarity ${entry.similarity?.toFixed(3)}`);
+      });
 
-          const preview = members
-            .slice(0, 3)
-            .map((m: any) => `${m.name} (${m.birthdate})`)
-            .join(', ');
+      const filtered = results.filter((entry) => (entry.similarity ?? 0) >= DEFAULT_SIMILARITY_THRESHOLD);
+      console.log(`   → ${filtered.length} embeddings above threshold (${DEFAULT_SIMILARITY_THRESHOLD})`);
+      return filtered;
+    } catch (error) {
+      console.error('   ❌ Failed to search semantic memory:', error);
+      return [];
+    }
+  }
 
-          return members.length > 0
-            ? `Retrieved ${members.length} family members: ${preview}${members.length > 3 ? '...' : ''}`
-            : 'Retrieved family roster (no members listed).';
-        }
+  private planNextStep(state: AgentState, insights: QueryInsights): PlannedStep {
+    const hasFamily = state.workingMemory.has('familyMembers');
+    const familyFetchFailed = state.workingMemory.get('familyFetchFailed') === true;
+    const shouldFetchFamily = !hasFamily && !familyFetchFailed && insights.mentionsFamily;
 
-        case 'getEvents': {
-          const name = actionInput?.name;
-          if (!name) {
-            return 'Cannot fetch events without a name.';
-          }
+    if (shouldFetchFamily) {
+      return {
+        thought: 'I should fetch the current family roster before making assumptions.',
+        action: 'getFamily'
+      };
+    }
 
-          const result = await this.mcpClient.getEvents(name);
+    const pendingEvents = this.getPendingEventTargets(state, insights);
+    if (pendingEvents.length > 0) {
+      return {
+        thought: `The question references events, so I still need the timeline for ${pendingEvents[0]}.`,
+        action: 'getEvents',
+        input: { name: pendingEvents[0] }
+      };
+    }
 
-          if (!result.success) {
-            plan.fetchedEventNames.add(name);
+    if (!hasFamily && !familyFetchFailed && insights.needsEvents) {
+      return {
+        thought: 'The user asked about events, so I need the family roster before I know whose timeline to inspect.',
+        action: 'getFamily'
+      };
+    }
 
-            const spouseName = this.findSpouseName(name, state.workingMemory);
-            if (spouseName && !plan.referencedNames.has(spouseName)) {
-              plan.referencedNames.add(spouseName);
-              return `${result.data?.answer || `No events found for ${name}.`} I'll check ${spouseName}'s timeline next.`;
-            }
+    return {
+      thought: 'I have enough context. Time to synthesize a final answer.',
+      action: 'FINISH'
+    };
+  }
 
-            return result.data?.answer || `No events found for ${name}.`;
-          }
-
-          const events = Array.isArray(result.data?.events) ? result.data.events : [];
-          state.workingMemory.set(`events_${name}`, events);
-          plan.fetchedEventNames.add(name);
-
-          const mirroredNames = this.mirrorEventsForSpouses(name, events, plan, state.workingMemory);
-
-          if (events.length === 0) {
-            return `No events found for ${name}.`;
-          }
-
-          const summary = events
-            .map((event: any) => `${event.type || event.event_type} on ${event.date || event.event_date}`)
-            .join(', ');
-
-          const mirrorNote = mirroredNames.length > 0
-            ? ` Also mirrored these events for ${mirroredNames.join(', ')}.`
-            : '';
-
-          return `Fetched ${events.length} event(s) for ${name}: ${summary}.${mirrorNote}`;
-        }
-
+  private async executeStep(step: PlannedStep, state: AgentState, insights: QueryInsights): Promise<string> {
+    try {
+      switch (step.action) {
+        case 'getFamily':
+          return await this.fetchFamilyRoster(state, insights);
+        case 'getEvents':
+          return await this.fetchEvents(step.input?.name, state, insights);
         case 'FINISH':
           return await this.generateFinalAnswer(state);
-
         default:
-          return `Unknown action: ${action}`;
+          return `Unknown action ${step.action}`;
       }
-    } catch (error: any) {
-      return `ERROR executing ${action}: ${error?.message || error}`;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`   ❌ Step ${step.action} failed:`, message);
+      return `ERROR executing ${step.action}: ${message}`;
     }
   }
 
-  private getPendingEventNames(plan: QueryPlan, memory: Map<string, any>): string[] {
-    console.log(`   📊 Getting pending events...`);
-    console.log(`   → needsEvents: ${plan.needsEvents}`);
-    
-    if (!plan.needsEvents) {
-      console.log(`   → No events needed, returning empty array`);
+  private async fetchFamilyRoster(state: AgentState, insights: QueryInsights): Promise<string> {
+    let result;
+    try {
+      // protect against hanging MCP server
+      result = await this.withTimeout(this.mcpClient.getFamily(), 10000, 'getFamily');
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      console.error('   ❌ getFamily timed out or failed:', msg);
+      state.workingMemory.set('familyFetchFailed', true);
+      state.workingMemory.set('familyFetchError', msg);
+      return `Failed to retrieve family roster from MCP server: ${msg}`;
+    }
+    if (!result.success) {
+      state.workingMemory.set('familyFetchFailed', true);
+      if (result.error) {
+        state.workingMemory.set('familyFetchError', result.error);
+      }
+      return result.data?.answer || 'Failed to retrieve family roster from MCP server.';
+    }
+
+    const members = Array.isArray(result.data?.members) ? result.data.members : [];
+    state.workingMemory.set('familyMembers', members);
+    this.markReferencedNames(insights, members);
+
+    const preview = members
+      .slice(0, 3)
+      .map((member: any) => `${member.name} (${member.birthdate})`)
+      .join(', ');
+
+    return members.length > 0
+      ? `Fetched ${members.length} family members: ${preview}${members.length > 3 ? '...' : ''}`
+      : 'Family roster is empty.';
+  }
+
+  private async fetchEvents(name: string | undefined, state: AgentState, insights: QueryInsights): Promise<string> {
+    if (!name) {
+      return 'Cannot fetch events without a target name.';
+    }
+
+    let result;
+    try {
+      result = await this.withTimeout(this.mcpClient.getEvents(name), 10000, `getEvents(${name})`);
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      console.error(`   ❌ getEvents(${name}) timed out or failed:`, msg);
+      this.getFetchedEventNames(state).add(name);
+      return `Failed to retrieve events for ${name}: ${msg}`;
+    }
+    const fetched = this.getFetchedEventNames(state);
+    fetched.add(name);
+
+    if (!result.success) {
+      const spouseName = this.findSpouseName(name, state.workingMemory);
+      if (spouseName && !insights.referencedNames.has(spouseName)) {
+        insights.referencedNames.add(spouseName);
+        return `${result.data?.answer || `No events found for ${name}.`} I'll inspect ${spouseName}'s events next.`;
+      }
+      return result.data?.answer || `No events found for ${name}.`;
+    }
+
+    const events = Array.isArray(result.data?.events) ? result.data.events : [];
+    state.workingMemory.set(`events_${name}`, events);
+
+    const mirrored = this.mirrorEventsForSpouses(name, events, state, insights);
+
+    if (events.length === 0) {
+      return `No events found for ${name}.`;
+    }
+
+    const summary = events
+      .map((event: any) => `${event.event_type ?? event.type} on ${event.event_date ?? event.date}`)
+      .join(', ');
+
+    const mirrorNote = mirrored.length ? ` Mirrored for ${mirrored.join(', ')}.` : '';
+    return `Retrieved ${events.length} event(s) for ${name}: ${summary}.${mirrorNote}`;
+  }
+
+  private getPendingEventTargets(state: AgentState, insights: QueryInsights): string[] {
+    if (!insights.needsEvents) {
       return [];
     }
 
-    const members = memory.get('familyMembers');
+    const members = state.workingMemory.get('familyMembers');
     if (!Array.isArray(members) || members.length === 0) {
-      console.log(`   → No family members in memory yet`);
       return [];
     }
 
-    if (plan.referencedNames.size === 0) {
-      console.log(`   → No referenced names yet, updating plan...`);
-      this.updatePlanWithMembers(plan, members);
+    if (insights.referencedNames.size === 0) {
+      this.markReferencedNames(insights, members);
     }
 
-    const pending = Array.from(plan.referencedNames).filter((name) => !plan.fetchedEventNames.has(name));
-    console.log(`   → Referenced names: ${Array.from(plan.referencedNames).join(', ')}`);
-    console.log(`   → Already fetched: ${Array.from(plan.fetchedEventNames).join(', ') || 'none'}`);
-    console.log(`   → Pending to fetch: ${pending.join(', ') || 'none'}\n`);
-    
+    const fetched = this.getFetchedEventNames(state);
+    const pending = Array.from(insights.referencedNames).filter((name) => !fetched.has(name));
+
+    if (pending.length === 0 && insights.needsEvents) {
+      // If no explicit names matched, inspect everyone sequentially until we satisfy the question
+      for (const member of members) {
+        const memberName = member.name;
+        if (memberName && !fetched.has(memberName)) {
+          pending.push(memberName);
+          break;
+        }
+      }
+    }
+
     return pending;
   }
 
-  private updatePlanWithMembers(plan: QueryPlan, members: any[]): void {
-    const normalized = plan.normalizedQuery;
-    console.log(`   🔍 Checking query for referenced names: "${normalized}"`);
-    console.log(`   🔍 needsEvents = ${plan.needsEvents}`);
-    
+  private markReferencedNames(insights: QueryInsights, members: any[]): void {
+    const normalized = insights.normalized;
+
     members.forEach((member: any) => {
-      const memberName = String(member.name || '')
-        .trim()
-        .toLowerCase();
+      const memberName = String(member.name || '').trim();
       if (!memberName) {
         return;
       }
-
-      // Match name with or without possessive ('s) or as part of compound name
-      // e.g., "maya's wedding" should match "maya"
-      const namePattern = new RegExp(`\\b${memberName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}('s)?\\b`, 'i');
-      if (namePattern.test(normalized)) {
-        plan.referencedNames.add(member.name);
-        console.log(`   ✓ Found referenced name: ${member.name}`);
+      const pattern = new RegExp(`\\b${memberName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}('s)?\\b`, 'i');
+      if (pattern.test(normalized)) {
+        insights.referencedNames.add(memberName);
       }
     });
-    
-    console.log(`   → Total referenced names: ${plan.referencedNames.size}`);
-
-    if (plan.needsEvents && plan.referencedNames.size === 0) {
-      if (normalized.includes('oldest')) {
-        const sortedByBirth = [...members].sort((a, b) => {
-          const aDate = new Date(a.birthdate ?? a.date ?? a.born ?? 0).getTime();
-          const bDate = new Date(b.birthdate ?? b.date ?? b.born ?? 0).getTime();
-          return aDate - bDate;
-        });
-        const oldest = sortedByBirth[0];
-        if (oldest?.name) {
-          plan.referencedNames.add(oldest.name);
-        }
-      }
-    }
   }
 
-  private findSpouseName(name: string, memory: Map<string, any>): string | null {
-    const members = memory.get('familyMembers');
-    if (!Array.isArray(members) || members.length === 0) {
-      return null;
+  private getFetchedEventNames(state: AgentState): Set<string> {
+    let fetched = state.workingMemory.get('fetchedEvents');
+    if (!(fetched instanceof Set)) {
+      fetched = new Set<string>();
+      state.workingMemory.set('fetchedEvents', fetched);
     }
-
-    const normalizedTarget = name.trim().toLowerCase();
-
-    for (const member of members) {
-      const memberName = String(member.name || '').trim().toLowerCase();
-      if (!memberName) {
-        continue;
-      }
-
-      if (memberName === normalizedTarget) {
-        const spouse = this.extractSpouseName(member);
-        if (spouse) {
-          return spouse;
-        }
-      }
-    }
-
-    return null;
-  }
-
-  private extractSpouseName(member: any): string | null {
-    if (!member) {
-      return null;
-    }
-
-    const rawSpouse = member.spouse ?? member.spouse_name ?? member.partner ?? member.partner_name;
-
-    if (typeof rawSpouse === 'string') {
-      const normalized = rawSpouse.trim();
-      return normalized.length > 0 ? normalized : null;
-    }
-
-    if (Array.isArray(rawSpouse) && rawSpouse.length > 0) {
-      const first = String(rawSpouse[0] ?? '').trim();
-      return first.length > 0 ? first : null;
-    }
-
-    return null;
+    return fetched;
   }
 
   private mirrorEventsForSpouses(
     name: string,
     events: any[],
-    plan: QueryPlan,
-    memory: Map<string, any>
+    state: AgentState,
+    insights: QueryInsights
   ): string[] {
     const mirrored: string[] = [];
-    const members = memory.get('familyMembers');
-
+    const members = state.workingMemory.get('familyMembers');
     if (!Array.isArray(members) || members.length === 0) {
       return mirrored;
     }
@@ -424,8 +427,9 @@ export class MultiPassAgent {
       }
 
       if (spouseName.trim().toLowerCase() === normalizedTarget && memberName.trim().toLowerCase() !== normalizedTarget) {
-        memory.set(`events_${memberName}`, events);
-        plan.fetchedEventNames.add(memberName);
+        state.workingMemory.set(`events_${memberName}`, events);
+        this.getFetchedEventNames(state).add(memberName);
+        insights.referencedNames.add(memberName);
         mirrored.push(memberName);
       }
     });
@@ -433,33 +437,75 @@ export class MultiPassAgent {
     return mirrored;
   }
 
+  private findSpouseName(name: string, memory: Map<string, any>): string | null {
+    const members = memory.get('familyMembers');
+    if (!Array.isArray(members) || members.length === 0) {
+      return null;
+    }
+
+    const normalized = name.trim().toLowerCase();
+    for (const member of members) {
+      const memberName = String(member.name || '').trim().toLowerCase();
+      if (memberName === normalized) {
+        return this.extractSpouseName(member);
+      }
+    }
+    return null;
+  }
+
+  private extractSpouseName(member: any): string | null {
+    if (!member) {
+      return null;
+    }
+
+    const raw = member.spouse ?? member.spouse_name ?? member.partner ?? member.partner_name;
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim();
+      return trimmed.length ? trimmed : null;
+    }
+
+    if (Array.isArray(raw) && raw.length > 0) {
+      const candidate = String(raw[0] ?? '').trim();
+      return candidate.length ? candidate : null;
+    }
+
+    return null;
+  }
+
   private async generateFinalAnswer(state: AgentState): Promise<string> {
-    const context: any = {};
+    const context: Record<string, any> = {};
 
     if (state.workingMemory.has('familyMembers')) {
       context.members = state.workingMemory.get('familyMembers');
     }
 
-    const allEvents: any[] = [];
+    const events: any[] = [];
     for (const [key, value] of state.workingMemory.entries()) {
       if (key.startsWith('events_') && Array.isArray(value)) {
-        allEvents.push(...value);
+        const owner = key.replace('events_', '');
+        value.forEach((event: any) => events.push({ ...event, person: event.person ?? owner }));
       }
     }
-    if (allEvents.length > 0) {
-      context.events = { events: allEvents };
+    if (events.length > 0) {
+      context.events = { name: 'Family', events };
     }
 
-    // Add embeddings to context if available
     if (state.workingMemory.has('embeddings')) {
       context.embeddings = state.workingMemory.get('embeddings');
     }
 
-    const result = await this.answerGenerator.answerGeneralQuery(
-      state.query,
-      context,
-      state.conversationHistory
-    );
+    let result;
+    try {
+      result = await this.withTimeout(
+        this.answerGenerator.answerGeneralQuery(state.query, context, state.conversationHistory),
+        20000,
+        'answerGeneralQuery'
+      );
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      console.error('   ❌ answerGeneralQuery timed out or failed:', msg);
+      return `Unable to generate answer: ${msg}`;
+    }
 
     if (result.success && result.data?.answer) {
       return result.data.answer;

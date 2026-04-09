@@ -15,7 +15,17 @@ export class FamilyMCPClient {
   private toolSchemas: Map<string, any> = new Map(); // Cache tool schemas
 
   constructor(baseUrl: string = 'http://localhost:6402/sse') {
-    this.baseUrl = baseUrl;
+    this.baseUrl = FamilyMCPClient.normalizeBaseUrl(baseUrl);
+  }
+
+  private static normalizeBaseUrl(baseUrl: string): string {
+    const url = new URL(baseUrl);
+
+    if (url.pathname === '/' || url.pathname === '') {
+      url.pathname = '/sse';
+    }
+
+    return url.toString().replace(/\/$/, '');
   }
 
   /**

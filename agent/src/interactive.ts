@@ -10,9 +10,9 @@ import { SinglePassAgent } from './agents/singlePassAgent';
 import * as readline from 'readline';
 
 async function runInteractive() {
-  const mcpServerUrl = process.env.MCP_SERVER_URL || 'http://localhost:6402';
+  const mcpServerUrl = process.env.MCP_SERVER_URL || 'http://localhost:6402/sse';
   const openaiApiKey = process.env.OPENAI_API_KEY;
-  const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  const openaiModel = process.env.OPENAI_MODEL || 'gpt-5.4-mini';
   
   const agent = new SinglePassAgent(mcpServerUrl, openaiApiKey, openaiModel);
 

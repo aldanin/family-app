@@ -4,6 +4,7 @@
  * the Family MCP tools directly to the Copilot agent runtime.
  */
 
+import { approveAll } from '@github/copilot-sdk';
 import type { CopilotClient, CopilotSession, AssistantMessageEvent, SessionEventPayload, Tool } from '@github/copilot-sdk';
 import OpenAI from 'openai';
 import { FamilyMCPClient } from '../familyMCPClient';
@@ -58,6 +59,7 @@ export class SinglePassAgent {
         model: this.sessionModel,
         streaming: true,
         tools,
+        onPermissionRequest: approveAll,
         systemMessage: {
           mode: 'append',
           content: this.buildSystemPrompt()

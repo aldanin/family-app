@@ -11,7 +11,7 @@ export class AnswerGenerator {
   private openai: OpenAI | null = null;
   private model: string;
 
-  constructor(apiKey?: string, model: string = 'gpt-4o-mini') {
+  constructor(apiKey?: string, model: string = 'gpt-5.4-mini') {
     this.model = model;
     
     if (apiKey) {
